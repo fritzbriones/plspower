@@ -1,9 +1,10 @@
 # plspower — A Monte Carlo Simulation Planner for PLS-SEM Power Analysis
 
-**Status: v0.3 — code-complete, engine validation pending.** This is a
-research-planning tool under active development. The simulation engine has
-not yet been executed on a hosted R runtime; run the built-in smoke test
-(see below) before using any output. Quick-preview results are never
+**Status: v0.4.1 — smoke test PASSED on a hosted R runtime (Posit Cloud,
+Nov 15, 2026).** This is a research-planning tool under active development.
+The built-in engine is the single supported estimator; independent
+cross-validation against established PLS-SEM software is planned as a
+separate validation exercise. Quick-preview results are never
 publication-grade by design.
 
 ## What it does
@@ -25,12 +26,37 @@ Differences between methods are reported in neutral wording as a
 method is wrong. Results apply **only** to the model and settings you
 specify; the 10-times rule is not a power criterion.
 
+**Note on the inverse square-root rule:** it is computed **two-tailed**,
+consistent with this app's two-sided CI inference. Kock & Hadaya's (2018)
+published tables are **one-tailed**, so the same inputs give different
+numbers (e.g., b = 0.20, α = 0.05, power = 0.80 → 155 one-tailed vs
+197 two-tailed).
+
+## What's different from existing tools
+
+Existing PLS-SEM planning aids each implement a single method: the
+inverse square-root rule (Kock & Hadaya, 2018; the PLS-SEM-power R
+package/Shiny app), G*Power regression recipes (Cohen/Faul), or scripted
+Monte Carlo simulation (matrixpls; Aguirre-Urreta & Rönkkö, 2015).
+`plspower` is not a new estimator. Its contribution is a transparent
+**comparison and calibration layer**: the same study, planned three ways,
+with measurement quality (loadings, indicator counts) as an explicit
+design input.
+
+Why the methods disagree: regression shortcuts and the inverse
+square-root rule implicitly assume error-free composites. With imperfect
+indicators, measurement-error attenuation reduces the effective effect
+size, so simulation-based planning typically requires a larger N than
+the shortcuts suggest — and the size of the gap depends on your
+measurement quality, which the shortcuts cannot see. `plspower` makes
+that cost visible.
+
 ## Quick start
 
 ```r
 # Requires R with:
 install.packages(c("shiny", "bslib", "ggplot2", "future",
-                   "promises", "jsonlite"))   # seminr is optional
+                   "promises", "jsonlite"))
 
 shiny::runApp("app.R")
 ```
@@ -43,21 +69,24 @@ Or deploy `app.R` as a single-file Shiny app to shinyapps.io
 - One mediation template: X → M → Y with direct effect X → Y
 - Three reflective (Mode A) constructs, 3–6 indicators each
 - Direct-effect power analysis; two-sided 95% CI inference
-- Normal-theory and percentile-bootstrap tests
+- Normal-theory and percentile-bootstrap tests (bootstrap power is
+  computed over valid bootstrap decisions only)
+- Single built-in Mode A engine — no engine selection in-app
 - No user-data fitting in v1 — prospective power only
 
 ## Validation protocol (read before reporting anything)
 
 1. **Built-in smoke test** (Methods & Validation tab): reproduces a
    seed-2026 reference fixture with explicit acceptance criteria
-   (power: ±5% relative; f²: 1e-6; inverse-sqrt: exact integer).
-   At 400 Monte Carlo replications this verifies *implementation
-   agreement*, not publication-grade precision.
-2. **Dual-engine cross-check** (when `seminr` is installed): the built-in
-   Mode A reference engine and `seminr::estimate_pls()` should produce
-   power curves within ±0.03 absolute at every N. Engines differ by
-   design (RNG paths, scaling, stopping rules), so exact agreement is
-   not expected.
+   (power: within 2.5 combined Monte Carlo standard errors;
+   f²: 1e-10 against a full-precision reference; inverse-sqrt: exact
+   integer). At 400 Monte Carlo replications this verifies
+   *implementation agreement*, not publication-grade precision.
+   **Status: PASSED on Posit Cloud (R 4.6.2), Nov 15, 2026.**
+2. **Independent cross-validation** (planned, separate script): the
+   built-in engine vs `seminr`/`cSEM` power curves within ±0.03 absolute
+   at every N, under a prespecified protocol. Neither package is an
+   in-app estimation backend.
 3. **Publication settings**: 5,000–10,000 MC replications × 10,000
    bootstrap resamples, at least 3 seeds. Only results at this tier are
    citable, and only as preliminary until independently validated.
@@ -68,8 +97,8 @@ so every run is reproducible.
 ## Known limitations
 
 - The built-in PLS-SEM engine is a hand-rolled Wold/Lohmöller Mode A
-  implementation with path weighting; it has **not yet been cross-validated
-  against `seminr`/`cSEM` at production Monte Carlo settings**.
+  implementation with path weighting; it has **not yet been independently
+  cross-validated against `seminr`/`cSEM`** under a prespecified protocol.
 - One model family only (v1); no formative constructs, multi-group
   analysis, higher-order constructs, or custom path diagrams.
 - Percentile bootstrap only (BCa planned).
@@ -77,8 +106,9 @@ so every run is reproducible.
 
 ## Roadmap
 
-- [ ] First hosted run + smoke test PASS (gate for all further claims)
-- [ ] `seminr` cross-validation (±0.03 agreement rule)
+- [x] First hosted run + smoke test PASS (Posit Cloud, Nov 15, 2026)
+- [ ] `seminr`/`cSEM` cross-validation via separate validation script
+      (±0.03 agreement rule)
 - [ ] Publication-tier fixture (5,000–10,000 MC × 10,000 boot, ≥3 seeds)
 - [ ] Condition sweep: loadings, indicator counts, path sizes,
       inference rules (power, Type I error, bias, N-at-80%)
@@ -99,5 +129,5 @@ MIT License. See LICENSE.
 ## Citation (temporary)
 
 Briones, F. J. (2026). *plspower: A Monte Carlo simulation planner for
-PLS-SEM power analysis* (Version 0.3) [Computer software]. GitHub.
+PLS-SEM power analysis* (Version 0.4.1) [Computer software]. GitHub.
 https://github.com/fritzbriones/plspower

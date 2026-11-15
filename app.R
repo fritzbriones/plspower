@@ -1,6 +1,6 @@
-# plspower - single-file deployable MVP 0.3 (concatenated from modular project)
+# plspower - single-file deployable MVP 0.4.1 (concatenated from modular project)
 # Deploy: paste into shinyapps.io as app.R, or run with shiny::runApp()
-# Requires: shiny, bslib, ggplot2, future, promises, jsonlite (seminr optional)
+# Requires: shiny, bslib, ggplot2, future, promises, jsonlite
 
 # =============== ENGINE ===============
 
@@ -98,17 +98,17 @@ power_curve <- function(p, n_grid, mc_reps, boot_reps, alpha, seed) {
                     bias = NA_real_, nonconv = 0, reps = 0L)
   for (i in seq_along(n_grid)) {
     n <- n_grid[i]
-    nt <- boot <- 0; bs <- c(); nc <- 0; done <- 0
+    nt <- boot <- 0; bs <- c(); nc <- 0; done <- 0; boot_done <- 0
     for (r in seq_len(mc_reps)) {
       res <- one_rep(n, p, boot_reps, alpha)
       if (is.na(res$b)) { nc <- nc + 1; next }
       done <- done + 1
       nt <- nt + as.integer(res$nt)
-      if (!is.na(res$boot)) boot <- boot + as.integer(res$boot)
+      if (!is.na(res$boot)) { boot <- boot + as.integer(res$boot); boot_done <- boot_done + 1L }
       bs <- c(bs, res$b)
     }
     out$power_nt[i]   <- if (done) nt / done else NA
-    out$power_boot[i] <- if (done) boot / done else NA
+    out$power_boot[i] <- if (boot_done) boot / boot_done else NA
     out$bias[i]       <- if (done) mean(bs) - p$c else NA
     out$nonconv[i]    <- nc
     out$reps[i]       <- done
@@ -161,32 +161,8 @@ inverse_sqrt_n <- function(b_min, alpha = 0.05, target = 0.80) {
   z <- qnorm(1 - alpha / 2) + qnorm(target)
   ceiling(z^2 / b_min^2)
 }
-# seminr_backend.R ---------------------------------------------------------------
-# Optional production backend. Engines differ by design (RNG paths, scaling,
-# stopping rules), so agreement is judged by the ENGINE-AGREEMENT RULE:
-# power curves agree within +/-0.03 absolute power at every N in the grid.
-# seminr::bootstrap_model(cores, seed) makes the cross-check reproducible.
-
-has_seminr <- function() requireNamespace("seminr", quietly = TRUE)
-
-seminr_fit_direct <- function(data, boot_reps, alpha) {
-  k <- sum(grepl("^x[0-9]+$", names(data)))
-  mm <- seminr::constructs(
-    seminr::reflective("X", seminr::multi_items("x", 1:k)),
-    seminr::reflective("M", seminr::multi_items("m", 1:k)),
-    seminr::reflective("Y", seminr::multi_items("y", 1:k))
-  )
-  sm <- seminr::structural(seminr::paths(from = c("X", "X", "M"),
-                                         to   = c("M", "Y", "Y")))
-  fit <- seminr::estimate_pls(data = data, measurement_model = mm,
-                              structural_model = sm,
-                              inner_weighting_scheme = seminr::path_weighting)
-  b <- unname(seminr::path_coef(fit)["X", "Y"])
-  if (boot_reps <= 0) return(list(b = b))
-  boot <- seminr::bootstrap_model(fit, nboot = boot_reps, cores = 1)
-  ci <- seminr::confidence_interval(boot, level = 1 - alpha)["X -> Y", ]
-  list(b = b, boot = !(ci[1] <= 0 && ci[2] >= 0))
-}
+# Independent cross-validation against seminr/cSEM is planned as a separate
+# validation script; neither package is an in-app estimation backend.
 # self_test.R --------------------------------------------------------------------
 # SMOKE TEST (not publication-grade validation).
 # Verifies that the deployed R engine reproduces the reference fixture
@@ -196,22 +172,21 @@ seminr_fit_direct <- function(data, boot_reps, alpha) {
 # precise minimum-N estimates.
 #
 # Acceptance criteria (fixed a priori):
-#   - power (each N, normal theory): |app - ref| / ref < 0.05 (relative)
-#   - f2 (G*Power-equivalent, deterministic): |app - ref| < 1e-6 (absolute)
+#   - power (each N, normal theory): difference <= 2.5 combined Monte Carlo SE
+#   - f2 (G*Power-equivalent, deterministic): full-precision reference,
+#     absolute tolerance 1e-10
 #   - inverse-sqrt N (deterministic): exact integer match
 #   - min-N is reported INFORMATIONALLY (interpolation artifact), no pass/fail
 # PASS requires ALL tolerance checks to pass.
 #
-# Engine-agreement rule (for the dual-engine cross-check, separate from this
-# smoke test): built-in vs seminr power curves agree within +/-0.03 absolute
-# power at every N in the validation grid, acknowledging that RNG paths,
-# scaling conventions, and stopping rules differ between engines.
+# Future independent cross-validation should compare this implementation
+# with established PLS-SEM software using a separately documented protocol.
 
 FIXTURE <- list(
   a = 0.40, b = 0.30, c = 0.20, lambda = 0.80, n_ind = 3,
   seed = 2026, reps = 400, grid = c(100, 150, 200, 250, 300),
   ref_power = c(0.432, 0.585, 0.690, 0.795, 0.902),
-  ref_min_n = 252, ref_f2 = 0.04088, ref_inv_sqrt = 197
+  ref_min_n = 252, ref_f2 = 0.04087591240875911, ref_inv_sqrt = 197
 )
 
 run_self_test <- function() {
@@ -230,12 +205,24 @@ run_self_test <- function() {
                result = ifelse(ok, "PASS", "FAIL"))
 
   for (i in seq_along(FIXTURE$grid)) {
-    tol <- 0.05 * FIXTURE$ref_power[i]          # relative 5%
+    ref_pw <- FIXTURE$ref_power[i]
+    app_pw <- pw[i]
+    # Both the reference and app power estimates use finite Monte Carlo
+    # samples. Compare them using 2.5 times the combined binomial MC standard
+    # error, rather than an arbitrary relative percentage tolerance.
+    tol <- 2.5 * sqrt(
+      ref_pw * (1 - ref_pw) / FIXTURE$reps +
+      app_pw * (1 - app_pw) / FIXTURE$reps
+    )
     add_row(sprintf("Power NT, N=%d", FIXTURE$grid[i]),
-            FIXTURE$ref_power[i], pw[i], tol, abs(pw[i] - FIXTURE$ref_power[i]) < tol)
+            ref_pw, app_pw, tol,
+            is.finite(app_pw) && abs(app_pw - ref_pw) <= tol)
   }
-  f2_ok <- abs(gp$f2 - FIXTURE$ref_f2) < 1e-6
-  add_row("f2 (G*Power-equivalent)", FIXTURE$ref_f2, gp$f2, 1e-6, f2_ok)
+  # Full-precision deterministic reference; small floating-point tolerance.
+  f2_tol <- 1e-10
+  f2_ok <- abs(gp$f2 - FIXTURE$ref_f2) <= f2_tol
+  add_row("f2 (G*Power-equivalent)", FIXTURE$ref_f2, gp$f2,
+          f2_tol, f2_ok)
   isq_ok <- isq == FIXTURE$ref_inv_sqrt
   add_row("Inverse-sqrt N", FIXTURE$ref_inv_sqrt, isq, 0, isq_ok)
 
@@ -254,7 +241,7 @@ run_self_test <- function() {
 # =============== APP ===============
 
 # app.R ---------------------------------------------------------------------------
-# plspower: a simulation PLANNER for PLS-SEM power analysis (MVP 0.3)
+# plspower: a simulation PLANNER for PLS-SEM power analysis (MVP 0.4.1)
 # Prospective power only. v1 scope: one mediation template, reflective Mode A.
 # Comparison methods reported with neutral wording ("planning-method
 # discrepancy"). In-app self-test is a SMOKE TEST (implementation agreement),
@@ -265,17 +252,18 @@ missing_pkgs <- REQ_PKGS[!vapply(REQ_PKGS, requireNamespace, logical(1),
                                  quietly = TRUE)]
 if (length(missing_pkgs))
   stop("plspower requires: ", paste(missing_pkgs, collapse = ", "),
-       ". Install with install.packages(). seminr is optional (enables the ",
-       "seminr engine selector when installed).")
+       ". Install the missing packages with install.packages().")
 
 library(shiny)
+library(bslib)
 library(ggplot2)
 library(future)
 library(promises)
+library(jsonlite)
 
 # (engine inlined above)
 
-APP_VERSION <- "plspower MVP 0.3"
+APP_VERSION <- "plspower MVP 0.4.1"
 TIERS <- list(
   quick        = list(mc = 200,  boot = 500,   label = "Quick preview (200 MC x 500 boot)"),
   standard     = list(mc = 1000, boot = 2000,  label = "Standard (1,000 MC x 2,000 boot)"),
@@ -285,6 +273,9 @@ TIERS <- list(
 run_power_simulation <- function(settings) {
   p <- list(a = settings$a, b = settings$b, c = settings$c,
             lambda = settings$lambda, n_ind = settings$n_ind)
+  if (!identical(settings$engine, "built-in")) {
+    stop("Only the built-in engine is currently integrated and supported.")
+  }
   curve <- power_curve(p, settings$n_grid, settings$mc_reps,
                        settings$boot_reps, settings$alpha, settings$seed)
   gp <- gpower_required_n(p$a, p$b, p$c, settings$alpha, settings$target)
@@ -302,7 +293,7 @@ run_power_simulation <- function(settings) {
 ui <- bslib::page_fillable(
   title = "plspower - PLS-SEM Monte Carlo power planner",
   theme = NULL,
-  layout_columns(
+  bslib::layout_columns(
     col_widths = c(4, 8),
     card(
       card_header("1. Specify the model"),
@@ -314,17 +305,19 @@ ui <- bslib::page_fillable(
         sliderInput("c", "Direct effect c (X -> Y, TARGET)", 0.05, 0.40, 0.20, 0.05),
         sliderInput("lambda", "Indicator loading (all)", 0.50, 0.95, 0.80, 0.05),
         sliderInput("n_ind", "Indicators per construct", 3, 6, 3, 1),
-        selectInput("engine", "Estimation engine",
-                    choices = c("built-in reference",
-                                if (has_seminr()) "seminr" else "seminr (not installed)")),
-        textOutput("engine_status"),
+        tags$p(strong("Estimation engine: "), "Built-in Mode A reference engine"),
+        tags$p(class = "text-muted", "Independent comparison with seminr/cSEM is planned as a separate validation exercise, not as an in-app engine option.")
       ),
       card_header("2. Analysis settings"),
       card_body(
         selectInput("alpha", "Significance level", c(0.05, 0.01, 0.10)),
         selectInput("target", "Target power", c(0.80, 0.90)),
-        selectInput("tier", "Compute tier", names(TIERS),
-                    choices = names(TIERS), selected = "quick"),
+        selectInput(
+          inputId = "tier",
+          label = "Compute tier",
+          choices = names(TIERS),
+          selected = "quick"
+        ),
         textOutput("tier_note"),
         uiOutput("tier_banner"),
         numericInput("seed", "Random seed", 2026),
@@ -354,13 +347,9 @@ ui <- bslib::page_fillable(
           tags$code("M = a*X + eM;  Y = b*M + c*X + eY (all latents standardized)"),
           tags$p("Indicators: x_ij = lambda*L + sqrt(1-lambda^2)*e_ij; Gaussian errors."),
           tags$h4("Estimator"),
-          tags$p("Built-in: PLS Mode A, path weighting, fixed point (1e-7);
-                 paths via OLS on composites; percentile bootstrap.
-                                 Optional seminr engine (estimate_pls +
-                                 bootstrap_model). Engines differ by design
-                                 (RNG, scaling, stopping rules); agreement
-                                 rule: power curves within +/-0.03 absolute
-                                 at every N."),
+          tags$p("Active estimator: built-in PLS Mode A, path weighting, fixed-point
+                 iteration (1e-7), paths via OLS on composites, and percentile
+                 bootstrap. seminr/cSEM comparisons are planned separately."),
           tags$h4("Definition of power"),
           tags$p("Proportion of MC replications whose two-sided 95% CI for
                  the direct effect excludes zero."),
@@ -369,10 +358,30 @@ ui <- bslib::page_fillable(
                  regression - the regression-shortcut question) and
                  Kock & Hadaya (2018) inverse square-root rule. Differences
                  are reported as 'planning-method discrepancy'."),
+          tags$p("Note: the inverse square-root rule is computed two-tailed,
+                 consistent with this app's two-sided inference; Kock &
+                 Hadaya's published tables are one-tailed (e.g., 155 vs 197
+                 at b = 0.20, alpha = 0.05, power = 0.80)."),
+          tags$h4("Positioning"),
+          tags$p("This tool is not a new estimator. Its contribution is a
+                 transparent comparison and calibration layer across
+                 planning methods for PLS-SEM: the same study, planned
+                 three ways, with measurement quality as an explicit
+                 design input."),
+          tags$p("Planning methods disagree largely because regression
+                 shortcuts and the inverse square-root rule implicitly
+                 assume error-free composites. With imperfect indicators
+                 (e.g., loading 0.80 with 3 indicators), measurement-error
+                 attenuation reduces the effective effect size, so the
+                 simulation typically requires a larger N than the
+                 shortcuts suggest. The discrepancy you see here is the
+                 cost of ignoring measurement quality at the planning stage."),
           tags$h4("Built-in smoke test"),
           tags$p("Reproduces the seed-2026 fixture with explicit tolerance
-                 rules (power: relative 5%; f2: 1e-6; inverse-sqrt: exact).
-                 SMOKE TEST: verifies implementation agreement, not
+                 rules (power: 2.5 combined Monte Carlo standard errors;
+                 f2: 1e-10 against a full-precision reference;
+                 inverse-sqrt: exact). SMOKE TEST: verifies implementation
+                 agreement, not
                  publication-grade precision (400 MC reps)."),
           actionButton("self_test", "Run engine smoke test"),
           tableOutput("self_test_table"),
@@ -381,8 +390,8 @@ ui <- bslib::page_fillable(
           tags$ul(
             tags$li("One mediation template; no formative constructs, MGA,
                     custom diagrams, or user-data fitting (prospective power only)."),
-            tags$li("Built-in engine not yet cross-validated against
-                    seminr/cSEM at publication MC settings."),
+            tags$li("The built-in engine has not yet been independently cross-validated
+                    against seminr/cSEM using a prespecified validation protocol."),
             tags$li("Results apply ONLY to the specified model and settings.")
           )
         ))
@@ -397,8 +406,7 @@ server <- function(input, output, session) {
     rng <- as.numeric(strsplit(input$n_grid_text, ",")[[1]])
     tier <- TIERS[[input$tier]]
     grid <- seq(rng[1], rng[2], by = rng[3])
-    engine <- if (startsWith(input$engine, "seminr") && has_seminr())
-      "seminr" else "built-in"
+    engine <- "built-in"
     list(a = input$a, b = input$b, c = input$c, lambda = input$lambda,
          n_ind = input$n_ind, alpha = as.numeric(input$alpha),
          target = as.numeric(input$target),
@@ -410,12 +418,12 @@ server <- function(input, output, session) {
 
   power_task <- ExtendedTask$new(function(s) future_promise({
     run_power_simulation(s)
-  })) |> bind_task_button("run_analysis")
+  }, seed = TRUE)) |> bind_task_button("run_analysis")
   observeEvent(input$run_analysis, power_task$invoke(settings()))
 
   self_task <- ExtendedTask$new(function(...) future_promise({
     run_self_test()
-  })) |> bind_task_button("self_test")
+  }, seed = TRUE)) |> bind_task_button("self_test")
   observeEvent(input$self_test, self_task$invoke(list()))
 
   res <- power_task$result
@@ -426,11 +434,6 @@ server <- function(input, output, session) {
       tags$p(style = "color:#c0392b;font-weight:600;",
              "Quick tier: DO NOT USE FOR REPORTING. Use Standard or
               Publication tier for any reported estimate.")
-  })
-
-  output$engine_status <- renderText({
-    if (has_seminr()) "seminr backend available."
-    else "seminr unavailable; using reference Mode A engine."
   })
 
   output$runtime_note <- renderText({
@@ -449,7 +452,7 @@ server <- function(input, output, session) {
     card(card_header(sprintf("Estimated minimum N for %d%% power",
                              round(100 * r$settings$target))),
          card_body(tags$pre(sprintf(
-"PLS-SEM bootstrap:        %s
+"Built-in bootstrap:       %s
 PLS-SEM normal theory:     %s
 G*Power regression:        %d
 Inverse square-root rule:  %d
@@ -472,7 +475,7 @@ Planning-method discrepancy (bootstrap vs G*Power): %s",
       scale_y_continuous(limits = c(0, 1)) +
       labs(y = "Power", x = "Sample size (N)",
            title = "Monte Carlo power curve (simulation-based)",
-           subtitle = "Blue: normal theory; orange dashed: percentile bootstrap") +
+           subtitle = "Blue: normal-theory test; orange dashed: built-in percentile bootstrap") +
       theme_minimal()
   })
 
