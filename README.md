@@ -11,7 +11,6 @@ publication-grade by design.
 
 **Try the app:** [Launch plspower on Posit Connect Cloud](https://01a1dfae-8fd9-812a-b8f2-f8ffdfb1f80c.share.connect.posit.cloud/)
 
-**Source code:** [GitHub repository](https://github.com/fritzbriones/plspower)
 
 ## What it does
 
