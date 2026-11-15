@@ -7,6 +7,12 @@ cross-validation against established PLS-SEM software is planned as a
 separate validation exercise. Quick-preview results are never
 publication-grade by design.
 
+## 🚀 Live Application
+
+**Try the app:** [Launch plspower on Posit Connect Cloud](https://01a1dfae-8fd9-812a-b8f2-f8ffdfb1f80c.share.connect.posit.cloud/)
+
+**Source code:** [GitHub repository](https://github.com/fritzbriones/plspower)
+
 ## What it does
 
 `plspower` is a **prospective** power-analysis planner for PLS-SEM studies.
