@@ -79,6 +79,20 @@ shiny::runApp("app.R")
 Or deploy `app.R` as a single-file Shiny app to shinyapps.io
 (`rsconnect::deployApp(appDir = ".", appFiles = "app.R")`).
 
+## What's new in v0.7.1 (phone display fixes)
+
+- Formulas split into shorter lines and scrollable, so nothing is cut off
+  on a phone; three stray "\;" symbols removed from the text.
+- Result box, methods text and tables wrap or scroll on small screens.
+- Power curve zooms to the sample sizes that were analysed, with a title
+  and legend that fit a phone screen.
+- Diagnostics show whole numbers for N; the model note reads
+  "True indirect effect: a x b = 0.165".
+- **Smoke-test reference updated:** now computed with seminr 2.6.0 on the
+  same seed-2026 datasets, so the test checks the current engine (the app
+  matches it exactly). The old reference came from the v0.4.1 engine,
+  before the path-weighting fix.
+
 ## What's new in v0.7.0
 
 - **Title bar** at the top of the app: *plspower — Sample-size and power
@@ -191,12 +205,13 @@ Publication tier on a computer.
 ## Validation protocol (read before reporting anything)
 
 1. **Built-in smoke test** (Methods & Validation tab): reproduces a
-   seed-2026 reference fixture with explicit acceptance criteria
+   seed-2026 reference fixture (power computed with seminr 2.6.0 on the
+   same datasets, from v0.7.1) with explicit acceptance criteria
    (power: within 2.5 combined Monte Carlo standard errors;
    f²: 1e-10 against a full-precision reference; inverse-sqrt: exact
    integer). At 400 Monte Carlo replications this verifies
    *implementation agreement*, not publication-grade precision.
-   **Status: PASSED on Posit Connect Cloud, v0.6.0, Nov 16, 2026.**
+   **Status: PASSED on Posit Connect Cloud, v0.7.0, Nov 17, 2026** (re-run after deploying v0.7.1).
 2. **Independent cross-validation against seminr**
    (`Rscript validation/cross_validate_seminr.R`): the built-in engine and
    `seminr::estimate_pls()` (Mode A, path weighting) fit the same simulated
@@ -258,7 +273,7 @@ MIT License. See LICENSE.
 If you use plspower in a thesis, article or report, please cite:
 
 > Briones, F. J. (2026). *plspower: A Monte Carlo simulation planner for
-> PLS-SEM power analysis* (Version 0.7.0) [Computer software]. GitHub.
+> PLS-SEM power analysis* (Version 0.7.1) [Computer software]. GitHub.
 > https://github.com/fritzbriones/plspower
 
 In-text: (Briones, 2026). GitHub's **"Cite this repository"** button
@@ -269,7 +284,7 @@ In-text: (Briones, 2026). GitHub's **"Cite this repository"** button
   author  = {Briones, Fritz Jeffry},
   title   = {plspower: A Monte Carlo simulation planner for PLS-SEM power analysis},
   year    = {2026},
-  version = {0.7.0},
+  version = {0.7.1},
   url     = {https://github.com/fritzbriones/plspower}
 }
 ```
