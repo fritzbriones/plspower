@@ -400,8 +400,7 @@ run_self_test <- function() {
     min_n = min_n_for_power(FIXTURE$grid, pw, 0.80),
     min_n_ref = FIXTURE$ref_min_n,
     gpower_n = gp$N, f2 = gp$f2, inv_sqrt = isq,
-    label = "Smoke test: verifies implementation agreement (400 MC reps),
-             not publication-grade precision."
+    label = "Smoke test: verifies implementation agreement (400 MC reps), not publication-grade precision."
   )
 }
 
@@ -813,7 +812,8 @@ ui <- bslib::page_fillable(
           helpText("$$\\operatorname{SE}_{MC} = \\sqrt{\\widehat{\\text{Power}}\\,(1-\\widehat{\\text{Power}})/R}$$"),
           tags$p("Minimum N: first grid point \\(N_1\\) with power \\(\\ge\\) target \\(\\pi^*\\), interpolated on the logit scale
                   from the previous point \\(N_0\\) (powers clamped to [0.001, 0.999]):"),
-          helpText("$$N^* = N_0 + \\frac{\\operatorname{logit}\\pi^* - \\operatorname{logit}\\pi_0}{\\operatorname{logit}\\pi_1 - \\operatorname{logit}\\pi_0}\\,(N_1 - N_0)$$"),
+          helpText("$$N^* = N_0 + t\\,(N_1 - N_0)$$"),
+          helpText("$$t = \\frac{\\operatorname{logit}\\pi^* - \\operatorname{logit}\\pi_0}{\\operatorname{logit}\\pi_1 - \\operatorname{logit}\\pi_0}$$"),
           tags$p("Find my N: step 1 scans 8 log-spaced N from the minimum to the maximum (200 replications, no bootstrap);
                   step 2 runs the chosen tier on 5 N values between the last scan point below the target and 1.1 times
                   the first point above it."),
