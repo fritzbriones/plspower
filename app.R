@@ -1,4 +1,4 @@
-# plspower - single-file deployable MVP 0.4.1 (concatenated from modular project)
+# plspower - single-file deployable MVP 0.4.2 (concatenated from modular project)
 # Deploy: paste into shinyapps.io as app.R, or run with shiny::runApp()
 # Requires: shiny, bslib, ggplot2, future, promises, jsonlite
 
@@ -46,10 +46,17 @@ pls_fit <- function(blocks) {
     R <- matrix(0, k, k)
     for (i in seq_len(k)) for (j in seq_len(k))
       R[i, j] <- cor(scores[[i]], scores[[j]])
+    # Path weighting scheme (Lohmoeller) for X -> M, X -> Y, M -> Y:
+    # successors are weighted by correlations, predecessors by the
+    # coefficients of the regression of the construct on its predecessors.
+    # v0.4.2: the X -> Y link is now included (v0.4.1 omitted it, so the
+    # inner model behaved like a pure chain X -> M -> Y).
+    b_y <- tryCatch(solve(R[1:2, 1:2], R[1:2, 3]), error = function(e) NULL)
+    if (is.null(b_y)) return(NULL)
     prox <- list(
-      R[1, 2] * scores[[2]],
-      R[1, 2] * scores[[1]] + R[2, 3] * scores[[3]],
-      R[2, 3] * scores[[2]]
+      R[1, 2] * scores[[2]] + R[1, 3] * scores[[3]],   # X: successors M, Y
+      R[1, 2] * scores[[1]] + R[2, 3] * scores[[3]],   # M: predecessor X (simple regression = r), successor Y
+      b_y[1]  * scores[[1]] + b_y[2]  * scores[[2]]    # Y: predecessors X, M
     )
     w_new <- lapply(seq_len(k), function(i)
       apply(blocks[[i]], 2, function(x) cov(x, prox[[i]])))
@@ -241,7 +248,7 @@ run_self_test <- function() {
 # =============== APP ===============
 
 # app.R ---------------------------------------------------------------------------
-# plspower: a simulation PLANNER for PLS-SEM power analysis (MVP 0.4.1)
+# plspower: a simulation PLANNER for PLS-SEM power analysis (MVP 0.4.2)
 # Prospective power only. v1 scope: one mediation template, reflective Mode A.
 # Comparison methods reported with neutral wording ("planning-method
 # discrepancy"). In-app self-test is a SMOKE TEST (implementation agreement),
@@ -263,7 +270,35 @@ library(jsonlite)
 
 # (engine inlined above)
 
-APP_VERSION <- "plspower MVP 0.4.1"
+APP_VERSION <- "plspower MVP 0.4.2"
+
+# Run simulations in a background R process so the app stays responsive
+# (ExtendedTask + future_promise only run in the background with a
+# multisession plan; without it every run blocked the whole app).
+future::plan(future::multisession, workers = 2)
+
+parse_grid <- function(txt) {
+  rng <- suppressWarnings(as.numeric(trimws(strsplit(txt, ",")[[1]])))
+  if (length(rng) != 3 || anyNA(rng) || rng[1] < 20 || rng[2] < rng[1] || rng[3] <= 0)
+    stop("N grid must be 'from,to,by' with from >= 20, to >= from and by > 0")
+  seq(rng[1], rng[2], by = rng[3])
+}
+
+fmt_duration <- function(secs) {
+  if (secs < 90) return(sprintf("%d seconds", max(1, round(secs))))
+  if (secs < 5400) return(sprintf("%d minutes", round(secs / 60)))
+  if (secs < 172800) return(sprintf("%.1f hours", secs / 3600))
+  sprintf("%.1f days", secs / 86400)
+}
+
+# Measure one PLS fit at N = 200 (3 indicators) once at startup, for the
+# runtime estimate. Takes well under a second.
+FIT_MS_N200 <- local({
+  set.seed(1)
+  b <- gen_data(200, list(a = .4, b = .3, c = .2, lambda = .8, n_ind = 3))
+  t <- system.time(for (i in 1:30) pls_fit(b))[["elapsed"]]
+  max(0.5, 1000 * t / 30)
+})
 TIERS <- list(
   quick        = list(mc = 200,  boot = 500,   label = "Quick preview (200 MC x 500 boot)"),
   standard     = list(mc = 1000, boot = 2000,  label = "Standard (1,000 MC x 2,000 boot)"),
@@ -321,7 +356,7 @@ ui <- bslib::page_fillable(
         textOutput("tier_note"),
         uiOutput("tier_banner"),
         numericInput("seed", "Random seed", 2026),
-        textInput("n_grid_text", "N grid (from,to,by)", "100,300,10"),
+        textInput("n_grid_text", "N grid (from,to,by)", "100,300,50"),
         textOutput("runtime_note")
       )
     ),
@@ -403,9 +438,10 @@ ui <- bslib::page_fillable(
 
 server <- function(input, output, session) {
   settings <- eventReactive(input$run_analysis, {
-    rng <- as.numeric(strsplit(input$n_grid_text, ",")[[1]])
+    grid <- tryCatch(parse_grid(input$n_grid_text), error = function(e) {
+      showNotification(conditionMessage(e), type = "error"); NULL })
+    req(grid)
     tier <- TIERS[[input$tier]]
-    grid <- seq(rng[1], rng[2], by = rng[3])
     engine <- "built-in"
     list(a = input$a, b = input$b, c = input$c, lambda = input$lambda,
          n_ind = input$n_ind, alpha = as.numeric(input$alpha),
@@ -413,7 +449,9 @@ server <- function(input, output, session) {
          n_grid = grid, mc_reps = tier$mc, boot_reps = tier$boot,
          seed = input$seed, runtime = Sys.time(),
          tier = input$tier, engine = engine,
-         versions = as.list(R.version.string))
+         versions = c(list(R = R.version.string),
+                      lapply(setNames(REQ_PKGS, REQ_PKGS),
+                             function(p) as.character(utils::packageVersion(p)))))
   })
 
   power_task <- ExtendedTask$new(function(s) future_promise({
@@ -436,12 +474,19 @@ server <- function(input, output, session) {
               Publication tier for any reported estimate.")
   })
 
+  # v0.4.2: honest runtime estimate, shown BEFORE the run. Every Monte Carlo
+  # replication needs 1 + boot_reps PLS fits, and fit time grows with N.
+  # The per-fit time is measured once on this machine (FIT_MS_N200).
   output$runtime_note <- renderText({
-    s <- settings(); req(s)
-    est <- length(s$n_grid) * s$mc_reps *
-      (1 + if (s$boot_reps > 0) 0.02 * s$boot_reps else 0) * 2e-4
-    sprintf("Estimated runtime: ~%d minute(s) on a laptop CPU",
-            max(1, round(est / 60)))
+    grid <- tryCatch(parse_grid(input$n_grid_text), error = function(e) NULL)
+    if (is.null(grid)) return("N grid: enter from,to,by (e.g. 100,300,50)")
+    tier <- TIERS[[input$tier]]
+    fits_per_rep <- 1 + tier$boot
+    secs <- sum(grid / 200) * tier$mc * fits_per_rep * FIT_MS_N200 / 1000 *
+      (input$n_ind / 3)
+    sprintf("Estimated runtime: ~%s (%s PLS fits on this server)",
+            fmt_duration(secs),
+            format(round(length(grid) * tier$mc * fits_per_rep), big.mark = ","))
   })
 
   output$required_n_card <- renderUI({
