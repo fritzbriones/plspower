@@ -436,6 +436,8 @@ num <- function(x, d = 2) formatC(x, format = "f", digits = d)
 # Ready-to-paste sample-size justification for a manuscript.
 methods_text <- function(r) {
   s <- r$settings; ind <- identical(s$effect, "indirect")
+  scan_only <- !is.null(r$coarse) && identical(r$curve, r$coarse)
+  if (scan_only) { s$boot_reps <- 0; s$mc_reps <- COARSE_MC }   # only the fast scan ran
   boot <- s$boot_reps > 0
   min_n <- if (ind) { if (boot) r$min_n_ind_boot else r$min_n_ind_sobel }
            else      { if (boot) r$min_n_boot     else r$min_n_nt }
