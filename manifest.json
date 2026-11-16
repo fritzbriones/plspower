@@ -1552,7 +1552,7 @@
   },
   "files": {
     "app.R": {
-      "checksum": "e85dfe43f59ad29170d4bb14812f4238"
+      "checksum": "c357aeb65471898eb0b64be21c6bcbdd"
     },
     "DESCRIPTION": {
       "checksum": "e1812955d8f3ad8067ee2c4ffe316a5f"
@@ -1561,7 +1561,7 @@
       "checksum": "7fb4163c3dc9ef4a84e346bb1c5de188"
     },
     "README.md": {
-      "checksum": "b5d4eca3f78c92e49d36d979c5c35fb3"
+      "checksum": "22ded807ba3d9aa0e84a53a32eacf7d5"
     }
   },
   "users": null

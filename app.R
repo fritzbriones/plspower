@@ -1,6 +1,6 @@
 # plspower - single-file deployable v0.8.0 (concatenated from modular project)
 # Author: Fritz Jeffry Briones - https://github.com/fritzbriones/plspower
-# Cite: Briones, F. J. (2026). plspower (Version 0.8.0) [Computer software].
+# Cite: Briones, F. J. (2026). plspower (Version 0.8.0) [Computer software]. Zenodo. https://doi.org/10.5281/zenodo.24291129
 # Deploy: paste into shinyapps.io as app.R, or run with shiny::runApp()
 # Requires: shiny, bslib, ggplot2, future, promises, jsonlite
 
@@ -435,17 +435,20 @@ PLSPOWER_VERSION <- "0.8.0"
 APP_VERSION <- paste("plspower", PLSPOWER_VERSION)
 AUTHOR <- "Fritz Jeffry Briones"
 REPO_URL <- "https://github.com/fritzbriones/plspower"
+DOI <- "10.5281/zenodo.24291129"
+DOI_URL <- paste0("https://doi.org/", DOI)
 CITATION_APA <- sprintf(paste0(
   "Briones, F. J. (2026). plspower: A Monte Carlo simulation planner for ",
-  "PLS-SEM power analysis (Version %s) [Computer software]. %s"),
-  PLSPOWER_VERSION, REPO_URL)
+  "PLS-SEM power analysis (Version %s) [Computer software]. Zenodo. %s"),
+  PLSPOWER_VERSION, DOI_URL)
 CITATION_INTEXT <- "(Briones, 2026)"
 CITATION_BIBTEX <- sprintf(paste0(
   "@software{briones2026plspower,\n",
   "  author  = {Briones, Fritz Jeffry},\n",
   "  title   = {plspower: A Monte Carlo simulation planner for PLS-SEM power analysis},\n",
-  "  year    = {2026},\n  version = {%s},\n  url     = {%s}\n}"),
-  PLSPOWER_VERSION, REPO_URL)
+  "  year    = {2026},\n  version = {%s},\n  publisher = {Zenodo},\n",
+  "  doi     = {%s},\n  url     = {%s}\n}"),
+  PLSPOWER_VERSION, DOI, DOI_URL)
 
 parse_grid <- function(txt) {
   rng <- suppressWarnings(as.numeric(trimws(strsplit(txt, ",")[[1]])))
@@ -663,8 +666,7 @@ methods_text <- function(r) {
     "error-free composites."), num(r$gpower$f2, 3), fmt_n(r$gpower$N), fmt_n(r$inverse_sqrt)))
   if (identical(s$tier, "quick"))
     out <- paste0(out, "\n\n[NOTE: Quick-preview tier - re-run with the Standard or Publication tier before reporting.]")
-  refs <- c(paste0("Briones, F. J. (2026). plspower: A Monte Carlo simulation planner for ",
-                   "PLS-SEM power analysis (Version ", PLSPOWER_VERSION, ") [Computer software]. ", REPO_URL),
+  refs <- c(CITATION_APA,
             if (!ind) paste0("Kock, N., & Hadaya, P. (2018). Minimum sample size estimation in PLS-SEM: ",
                              "The inverse square root and gamma-exponential methods. Information ",
                              "Systems Journal, 28(1), 227-261."),
@@ -680,6 +682,7 @@ cite_card <- function() card(
     tags$blockquote(style = "font-size:0.95em;", CITATION_APA),
     tags$p(tags$small("In-text: ", CITATION_INTEXT)),
     tags$details(tags$summary("BibTeX"), tags$pre(CITATION_BIBTEX)),
+    tags$p(tags$small("DOI: ", tags$a(href = DOI_URL, target = "_blank", DOI))),
     tags$p(tags$small("Created by ", tags$strong(AUTHOR), " - ",
                       tags$a(href = REPO_URL, target = "_blank", REPO_URL)))
   ))
