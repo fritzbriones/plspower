@@ -208,9 +208,9 @@ Publication tier on a computer.
    datasets: largest path difference 1.3e-7, largest power difference 0.000
    across 51 effect-by-condition cells. The v0.4.1 engine fails the simple
    check (difference 0.09). Results: `validation/results/`.
-3. **Publication settings**: 5,000–10,000 MC replications × 10,000
-   bootstrap resamples, at least 3 seeds. Only results at this tier are
-   citable.
+3. **Publication settings**: the Publication tier (5,000 MC replications ×
+   2,000 bootstrap resamples); for a final reported N, repeat with at least
+   3 seeds. Quick-tier results are never citable.
 
 Exported JSON contains seed, all settings, package versions, and results,
 so every run is reproducible.
@@ -236,7 +236,7 @@ so every run is reproducible.
 - [x] 2–3 mediators, parallel or serial — v0.6.0
 - [ ] Moderation (interaction terms)
 - [ ] BCa bootstrap
-- [ ] Publication-tier fixture (5,000–10,000 MC × 10,000 boot, ≥3 seeds)
+- [ ] Publication-tier fixture (5,000 MC × 2,000 boot, ≥3 seeds)
 - [ ] Condition sweep: loadings, indicator counts, path sizes,
       inference rules (power, Type I error, bias, N-at-80%)
 - [ ] testthat suite in this repo; modular package structure; renv.lock
