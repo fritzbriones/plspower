@@ -278,6 +278,61 @@ square-root approach); `semPower` for covariance-based SEM; G*Power.
 This tool's intended contribution is a transparent **comparison and
 calibration layer** across planning methods, not a new estimator.
 
+## References
+
+Aguirre-Urreta, M. I., & Rönkkö, M. (2015). Sample size determination and
+statistical power analysis in PLS using R: An annotated tutorial.
+*Communications of the Association for Information Systems, 36*, 33–51.
+https://doi.org/10.17705/1CAIS.03603
+
+Ansani, A., & Rinallo, E. (2025). *PLS-SEM-power: A Shiny app and R package
+for computing required sample size and minimum detectable effect size in
+PLS-SEMs* [Preprint]. arXiv. https://arxiv.org/abs/2511.14546
+
+Cohen, J. (1988). *Statistical power analysis for the behavioral sciences*
+(2nd ed.). Lawrence Erlbaum Associates.
+
+Efron, B., & Tibshirani, R. J. (1993). *An introduction to the bootstrap*.
+Chapman & Hall.
+
+Faul, F., Erdfelder, E., Buchner, A., & Lang, A.-G. (2009). Statistical power
+analyses using G*Power 3.1: Tests for correlation and regression analyses.
+*Behavior Research Methods, 41*(4), 1149–1160.
+https://doi.org/10.3758/BRM.41.4.1149
+
+Faul, F., Erdfelder, E., Lang, A.-G., & Buchner, A. (2007). G*Power 3: A
+flexible statistical power analysis program for the social, behavioral, and
+biomedical sciences. *Behavior Research Methods, 39*(2), 175–191.
+https://doi.org/10.3758/BF03193146
+
+Hair, J. F., Hult, G. T. M., Ringle, C. M., & Sarstedt, M. (2022). *A primer
+on partial least squares structural equation modeling (PLS-SEM)* (3rd ed.).
+Sage.
+
+Kock, N., & Hadaya, P. (2018). Minimum sample size estimation in PLS-SEM: The
+inverse square root and gamma-exponential methods. *Information Systems
+Journal, 28*(1), 227–261. https://doi.org/10.1111/isj.12131
+
+Lohmöller, J.-B. (1989). *Latent variable path modeling with partial least
+squares*. Physica-Verlag.
+
+Muthén, L. K., & Muthén, B. O. (2002). How to use a Monte Carlo study to
+decide on sample size and determine power. *Structural Equation Modeling,
+9*(4), 599–620. https://doi.org/10.1207/S15328007SEM0904_8
+
+Preacher, K. J., & Hayes, A. F. (2008). Asymptotic and resampling strategies
+for assessing and comparing indirect effects in multiple mediator models.
+*Behavior Research Methods, 40*(3), 879–891.
+https://doi.org/10.3758/BRM.40.3.879
+
+Ray, S., Danks, N. P., & Calero Valdez, A. (2026). *seminr: Building and
+estimating structural equation models* (Version 2.6.0) [R package].
+https://CRAN.R-project.org/package=seminr
+
+Sobel, M. E. (1982). Asymptotic confidence intervals for indirect effects in
+structural equation models. *Sociological Methodology, 13*, 290–312.
+https://doi.org/10.2307/270723
+
 ## License
 
 MIT License. See LICENSE.
