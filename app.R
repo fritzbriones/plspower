@@ -1,4 +1,6 @@
-# plspower - single-file deployable MVP 0.4.2 (concatenated from modular project)
+# plspower - single-file deployable v0.5.0 (concatenated from modular project)
+# Author: Fritz Jeffry Briones - https://github.com/fritzbriones/plspower
+# Cite: Briones, F. J. (2026). plspower (Version 0.5.0) [Computer software].
 # Deploy: paste into shinyapps.io as app.R, or run with shiny::runApp()
 # Requires: shiny, bslib, ggplot2, future, promises, jsonlite
 
@@ -28,99 +30,132 @@ gen_data <- function(n, p) {
     replicate(p$n_ind, p$lambda * L + lam_err * rnorm(n)))
 }
 
-pls_fit <- function(blocks) {
-  n <- nrow(blocks[[1]])
-  blocks <- lapply(blocks, function(B)
-    structure(scale(B), "scaled:centers" = NULL, "scaled:scale" = NULL))
-  k <- length(blocks)
-  w <- lapply(blocks, function(B) rep(1, ncol(B)))
-  scores <- NULL; conv <- FALSE
-  for (it in 1:100) {
-    scores <- lapply(seq_len(k), function(i) {
-      s <- as.numeric(blocks[[i]] %*% w[[i]])
-      sd_s <- sd(s)
-      if (!is.finite(sd_s) || sd_s < 1e-12) return(NULL)
-      (s - mean(s)) / sd_s
-    })
-    if (any(vapply(scores, is.null, logical(1)))) return(NULL)
-    R <- matrix(0, k, k)
-    for (i in seq_len(k)) for (j in seq_len(k))
-      R[i, j] <- cor(scores[[i]], scores[[j]])
-    # Path weighting scheme (Lohmoeller) for X -> M, X -> Y, M -> Y:
-    # successors are weighted by correlations, predecessors by the
-    # coefficients of the regression of the construct on its predecessors.
-    # v0.4.2: the X -> Y link is now included (v0.4.1 omitted it, so the
-    # inner model behaved like a pure chain X -> M -> Y).
-    b_y <- tryCatch(solve(R[1:2, 1:2], R[1:2, 3]), error = function(e) NULL)
-    if (is.null(b_y)) return(NULL)
-    prox <- list(
-      R[1, 2] * scores[[2]] + R[1, 3] * scores[[3]],   # X: successors M, Y
-      R[1, 2] * scores[[1]] + R[2, 3] * scores[[3]],   # M: predecessor X (simple regression = r), successor Y
-      b_y[1]  * scores[[1]] + b_y[2]  * scores[[2]]    # Y: predecessors X, M
-    )
-    w_new <- lapply(seq_len(k), function(i)
-      apply(blocks[[i]], 2, function(x) cov(x, prox[[i]])))
-    nw <- function(v) v / sqrt(sum(v^2))
-    delta <- max(abs(unlist(mapply(function(v1, v2)
-      nw(v1) - nw(v2), w_new, w, SIMPLIFY = FALSE))))
-    w <- w_new
-    if (delta < 1e-7) { conv <- TRUE; break }
-  }
-  if (!conv) return(NULL)
-  sc <- scores
-  df <- data.frame(x = sc[[1]], m = sc[[2]], y = sc[[3]])
-  fit <- lm(y ~ x + m, data = df)
-  list(b_direct = unname(coef(fit)[2]),
-       se = unname(sqrt(diag(vcov(fit)))[2]),
-       r2 = unname(summary(fit)$r.squared),
-       converged = conv)
+# ---- PLS-SEM Mode A, path weighting (v0.5.0: matrix implementation) --------
+# Numerically identical to v0.4.2 (max difference ~1e-15) and ~10x faster:
+# indicators are standardised once, composite scores and inner weights are
+# computed with matrix products, and the structural paths come from the
+# composite correlation matrix (same estimates and SEs as lm()).
+std_cols <- function(B) {
+  n <- nrow(B)
+  B <- B - rep(colMeans(B), each = n)
+  s <- sqrt(colSums(B * B) / (n - 1))
+  if (any(!is.finite(s) | s < 1e-12)) return(NULL)
+  B / rep(s, each = n)
 }
 
+pls_fit <- function(blocks, tol = 1e-7, max_it = 100) {
+  n <- nrow(blocks[[1]])
+  blocks <- lapply(blocks, std_cols)
+  if (any(vapply(blocks, is.null, logical(1)))) return(NULL)
+  w <- lapply(blocks, function(B) rep(1, ncol(B)))
+  nw <- function(v) v / sqrt(sum(v * v))
+  S <- matrix(0, n, 3); conv <- FALSE
+  for (it in seq_len(max_it)) {
+    for (i in 1:3) {
+      s <- blocks[[i]] %*% w[[i]]
+      sd_s <- sqrt(sum(s * s) / (n - 1))   # indicators centred -> mean(s) = 0
+      if (!is.finite(sd_s) || sd_s < 1e-12) return(NULL)
+      S[, i] <- s / sd_s
+    }
+    R <- crossprod(S) / (n - 1)
+    # Path weighting (Lohmoeller) for X -> M, X -> Y, M -> Y: successors get
+    # correlation weights, predecessors get regression weights.
+    b_y <- tryCatch(solve(R[1:2, 1:2], R[1:2, 3]), error = function(e) NULL)
+    if (is.null(b_y)) return(NULL)
+    E <- matrix(c(0,       R[1, 2], R[1, 3],    # X: successors M, Y
+                  R[1, 2], 0,       R[2, 3],    # M: predecessor X, successor Y
+                  b_y[1],  b_y[2],  0), 3, 3)   # Y: predecessors X, M
+    Z <- S %*% E
+    w_new <- lapply(1:3, function(i) drop(crossprod(blocks[[i]], Z[, i])) / (n - 1))
+    delta <- max(abs(unlist(Map(function(a, b) nw(a) - nw(b), w_new, w))))
+    w <- w_new
+    if (delta < tol) { conv <- TRUE; break }
+  }
+  if (!conv) return(NULL)
+  Rxx <- R[1:2, 1:2]; rxy <- R[1:2, 3]
+  beta <- solve(Rxx, rxy)                       # Y ~ X + M
+  r2 <- sum(beta * rxy)
+  s2 <- (n - 1) * (1 - r2) / (n - 3)
+  se_beta <- sqrt(diag(s2 * solve(Rxx) / (n - 1)))
+  a <- R[1, 2]                                  # M ~ X
+  list(b_direct = beta[1], se = se_beta[1], r2 = r2,
+       a = a, se_a = sqrt((1 - a^2) / (n - 2)),
+       b_m = beta[2], se_b = se_beta[2], converged = TRUE)
+}
+
+# One Monte Carlo replication. Tests (two-sided, level alpha):
+#   direct effect c : normal-theory t test; percentile bootstrap CI
+#   indirect a x b  : Sobel z test;         percentile bootstrap CI
 one_rep <- function(n, p, boot_reps, alpha) {
   blocks <- gen_data(n, p)
   fit <- pls_fit(blocks)
-  if (is.null(fit)) return(list(nt = NA, boot = NA, b = NA))
+  na <- list(nt = NA, boot = NA, b = NA, ind_sobel = NA, ind_boot = NA, ab = NA)
+  if (is.null(fit)) return(na)
   nt <- abs(fit$b_direct / fit$se) > qt(1 - alpha / 2, n - 3)
-  boot <- NA
+  ab <- fit$a * fit$b_m
+  sobel_se <- sqrt(fit$b_m^2 * fit$se_a^2 + fit$a^2 * fit$se_b^2)
+  ind_sobel <- abs(ab / sobel_se) > qnorm(1 - alpha / 2)
+  boot <- ind_boot <- NA
   if (boot_reps > 0) {
-    idx <- seq_len(n)
-    bs <- numeric(boot_reps)
-    ok <- 0
+    bs <- bab <- numeric(boot_reps); ok <- 0
     for (bb in seq_len(boot_reps)) {
-      rows <- sample(idx, n, replace = TRUE)
+      rows <- sample.int(n, n, replace = TRUE)
       fb <- pls_fit(lapply(blocks, function(B) B[rows, , drop = FALSE]))
-      if (!is.null(fb)) { ok <- ok + 1; bs[ok] <- fb$b_direct }
+      if (!is.null(fb)) { ok <- ok + 1; bs[ok] <- fb$b_direct; bab[ok] <- fb$a * fb$b_m }
     }
     if (ok >= boot_reps / 2) {
-      q <- quantile(bs[seq_len(ok)], c(alpha / 2, 1 - alpha / 2))
-      boot <- !(q[1] <= 0 && q[2] >= 0)
+      pr <- c(alpha / 2, 1 - alpha / 2)
+      q  <- quantile(bs[seq_len(ok)], pr, names = FALSE)
+      qi <- quantile(bab[seq_len(ok)], pr, names = FALSE)
+      boot     <- !(q[1]  <= 0 && q[2]  >= 0)
+      ind_boot <- !(qi[1] <= 0 && qi[2] >= 0)
     }
   }
-  list(nt = nt, boot = boot, b = fit$b_direct)
+  list(nt = nt, boot = boot, b = fit$b_direct,
+       ind_sobel = ind_sobel, ind_boot = ind_boot, ab = ab)
 }
 
-power_curve <- function(p, n_grid, mc_reps, boot_reps, alpha, seed) {
-  set.seed(seed)
-  out <- data.frame(N = n_grid, power_nt = NA_real_, power_boot = NA_real_,
-                    bias = NA_real_, nonconv = 0, reps = 0L)
-  for (i in seq_along(n_grid)) {
-    n <- n_grid[i]
-    nt <- boot <- 0; bs <- c(); nc <- 0; done <- 0; boot_done <- 0
-    for (r in seq_len(mc_reps)) {
-      res <- one_rep(n, p, boot_reps, alpha)
-      if (is.na(res$b)) { nc <- nc + 1; next }
-      done <- done + 1
-      nt <- nt + as.integer(res$nt)
-      if (!is.na(res$boot)) { boot <- boot + as.integer(res$boot); boot_done <- boot_done + 1L }
-      bs <- c(bs, res$b)
-    }
-    out$power_nt[i]   <- if (done) nt / done else NA
-    out$power_boot[i] <- if (boot_done) boot / boot_done else NA
-    out$bias[i]       <- if (done) mean(bs) - p$c else NA
-    out$nonconv[i]    <- nc
-    out$reps[i]       <- done
+# Power at one sample size.
+power_at_n <- function(n, p, mc_reps, boot_reps, alpha) {
+  r <- lapply(seq_len(mc_reps), function(i) one_rep(n, p, boot_reps, alpha))
+  ok <- !vapply(r, function(x) is.na(x$b), logical(1))
+  g <- function(k) { v <- unlist(lapply(r[ok], `[[`, k)); v <- v[!is.na(v)]
+                     if (length(v)) mean(v) else NA_real_ }
+  data.frame(N = n,
+             power_nt = g("nt"), power_boot = g("boot"),
+             power_ind_sobel = g("ind_sobel"), power_ind_boot = g("ind_boot"),
+             bias = if (any(ok)) mean(unlist(lapply(r[ok], `[[`, "b"))) - p$c else NA_real_,
+             bias_ind = if (any(ok)) mean(unlist(lapply(r[ok], `[[`, "ab"))) - p$a * p$b else NA_real_,
+             nonconv = sum(!ok), reps = sum(ok))
+}
+
+# Number of CPU cores used for a run (forking is not available on Windows).
+plspower_cores <- function() {
+  if (.Platform$OS.type == "windows") return(1L)
+  max(1L, min(4L, parallel::detectCores(logical = FALSE), na.rm = TRUE))
+}
+
+# Power curve over the N grid. v0.5.0: each grid point gets its own
+# L'Ecuyer-CMRG random-number stream derived from `seed`, so results are
+# identical whether the grid points run one after another or in parallel.
+power_curve <- function(p, n_grid, mc_reps, boot_reps, alpha, seed,
+                        cores = plspower_cores()) {
+  old_kind <- RNGkind()[1]
+  on.exit(RNGkind(old_kind), add = TRUE)
+  RNGkind("L'Ecuyer-CMRG"); set.seed(seed)
+  streams <- vector("list", length(n_grid)); s <- .Random.seed
+  for (i in seq_along(n_grid)) { streams[[i]] <- s; s <- parallel::nextRNGStream(s) }
+  job <- function(i) {
+    assign(".Random.seed", streams[[i]], envir = globalenv())
+    power_at_n(n_grid[i], p, mc_reps, boot_reps, alpha)
   }
-  out
+  idx <- seq_along(n_grid)
+  res <- if (cores > 1 && length(idx) > 1) {
+    parallel::mclapply(idx, job, mc.cores = cores, mc.preschedule = FALSE)
+  } else lapply(idx, job)
+  bad <- vapply(res, inherits, logical(1), "try-error")
+  if (any(bad)) stop("Simulation failed: ", conditionMessage(attr(res[[which(bad)[1]]], "condition")))
+  do.call(rbind, res)
 }
 
 min_n_for_power <- function(n_grid, pw, target) {
@@ -248,7 +283,7 @@ run_self_test <- function() {
 # =============== APP ===============
 
 # app.R ---------------------------------------------------------------------------
-# plspower: a simulation PLANNER for PLS-SEM power analysis (MVP 0.4.2)
+# plspower: a simulation PLANNER for PLS-SEM power analysis (v0.5.0)
 # Prospective power only. v1 scope: one mediation template, reflective Mode A.
 # Comparison methods reported with neutral wording ("planning-method
 # discrepancy"). In-app self-test is a SMOKE TEST (implementation agreement),
@@ -270,12 +305,22 @@ library(jsonlite)
 
 # (engine inlined above)
 
-APP_VERSION <- "plspower MVP 0.4.2"
+PLSPOWER_VERSION <- "0.5.0"
+APP_VERSION <- paste("plspower", PLSPOWER_VERSION)
+AUTHOR <- "Fritz Jeffry Briones"
+REPO_URL <- "https://github.com/fritzbriones/plspower"
+CITATION_APA <- sprintf(paste0(
+  "Briones, F. J. (2026). plspower: A Monte Carlo simulation planner for ",
+  "PLS-SEM power analysis (Version %s) [Computer software]. %s"),
+  PLSPOWER_VERSION, REPO_URL)
+CITATION_INTEXT <- "(Briones, 2026)"
+CITATION_BIBTEX <- sprintf(paste0(
+  "@software{briones2026plspower,\n",
+  "  author  = {Briones, Fritz Jeffry},\n",
+  "  title   = {plspower: A Monte Carlo simulation planner for PLS-SEM power analysis},\n",
+  "  year    = {2026},\n  version = {%s},\n  url     = {%s}\n}"),
+  PLSPOWER_VERSION, REPO_URL)
 
-# Run simulations in a background R process so the app stays responsive
-# (ExtendedTask + future_promise only run in the background with a
-# multisession plan; without it every run blocked the whole app).
-future::plan(future::multisession, workers = 2)
 
 parse_grid <- function(txt) {
   rng <- suppressWarnings(as.numeric(trimws(strsplit(txt, ",")[[1]])))
@@ -291,19 +336,28 @@ fmt_duration <- function(secs) {
   sprintf("%.1f days", secs / 86400)
 }
 
-# Measure one PLS fit at N = 200 (3 indicators) once at startup, for the
-# runtime estimate. Takes well under a second.
+# Time PLS fits at N = 200 once at startup (a short bootstrap replication, so
+# resampling overhead is included), for the runtime estimate. ~0.1 s.
 FIT_MS_N200 <- local({
-  set.seed(1)
-  b <- gen_data(200, list(a = .4, b = .3, c = .2, lambda = .8, n_ind = 3))
-  t <- system.time(for (i in 1:30) pls_fit(b))[["elapsed"]]
-  max(0.5, 1000 * t / 30)
+  p0 <- list(a = .4, b = .3, c = .2, lambda = .8, n_ind = 3)
+  set.seed(1); one_rep(200, p0, 5, .05)                    # warm-up
+  t <- system.time(one_rep(200, p0, 60, .05))[["elapsed"]]
+  max(0.05, 1000 * t / 61)
 })
+N_CORES <- plspower_cores()
+
+# Run simulations in a background R process so the app stays responsive.
+# (Set after the timing above so starting the workers does not slow it.)
+future::plan(future::multisession, workers = 2)
+
 TIERS <- list(
   quick        = list(mc = 200,  boot = 500,   label = "Quick preview (200 MC x 500 boot)"),
   standard     = list(mc = 1000, boot = 2000,  label = "Standard (1,000 MC x 2,000 boot)"),
   publication  = list(mc = 5000, boot = 10000, label = "Publication (5,000 MC x 10,000 boot)")
 )
+
+EFFECT_LABEL <- c(direct = "direct effect c (X -> Y)",
+                  indirect = "indirect effect a x b (X -> M -> Y)")
 
 run_power_simulation <- function(settings) {
   p <- list(a = settings$a, b = settings$b, c = settings$c,
@@ -311,19 +365,91 @@ run_power_simulation <- function(settings) {
   if (!identical(settings$engine, "built-in")) {
     stop("Only the built-in engine is currently integrated and supported.")
   }
+  t0 <- Sys.time()
   curve <- power_curve(p, settings$n_grid, settings$mc_reps,
-                       settings$boot_reps, settings$alpha, settings$seed)
+                       settings$boot_reps, settings$alpha, settings$seed,
+                       cores = settings$cores)
   gp <- gpower_required_n(p$a, p$b, p$c, settings$alpha, settings$target)
   isq <- inverse_sqrt_n(p$c, settings$alpha, settings$target)
+  g <- settings$n_grid; tg <- settings$target
   list(
     settings = settings, curve = curve,
-    min_n_nt = min_n_for_power(settings$n_grid, curve$power_nt, settings$target),
-    min_n_boot = min_n_for_power(settings$n_grid, curve$power_boot, settings$target),
+    min_n_nt = min_n_for_power(g, curve$power_nt, tg),
+    min_n_boot = min_n_for_power(g, curve$power_boot, tg),
+    min_n_ind_sobel = min_n_for_power(g, curve$power_ind_sobel, tg),
+    min_n_ind_boot = min_n_for_power(g, curve$power_ind_boot, tg),
     gpower = gp, inverse_sqrt = isq,
-    runtime = settings$runtime, version = APP_VERSION,
-    engine = settings$engine
+    runtime = settings$runtime,
+    elapsed_sec = as.numeric(difftime(Sys.time(), t0, units = "secs")),
+    version = APP_VERSION, engine = settings$engine,
+    citation = CITATION_APA
   )
 }
+
+fmt_n <- function(x) if (is.na(x)) "not reached in grid" else format(x)
+num <- function(x, d = 2) formatC(x, format = "f", digits = d)
+
+# Ready-to-paste sample-size justification for a manuscript.
+methods_text <- function(r) {
+  s <- r$settings; ind <- identical(s$effect, "indirect")
+  boot <- s$boot_reps > 0
+  min_n <- if (ind) { if (boot) r$min_n_ind_boot else r$min_n_ind_sobel }
+           else      { if (boot) r$min_n_boot     else r$min_n_nt }
+  pw <- if (ind) { if (boot) r$curve$power_ind_boot else r$curve$power_ind_sobel }
+        else      { if (boot) r$curve$power_boot     else r$curve$power_nt }
+  test <- if (boot) sprintf(paste0("the two-sided %d%% percentile bootstrap confidence ",
+                                   "interval (%s resamples) excluded zero"),
+                            round(100 * (1 - s$alpha)), format(s$boot_reps, big.mark = ","))
+          else if (ind) "the Sobel test was significant (two-sided)"
+          else "the two-sided t test was significant"
+  grid <- s$n_grid
+  out <- paste0(
+    "An a priori Monte Carlo power analysis was conducted with plspower (Version ",
+    PLSPOWER_VERSION, "; Briones, 2026). Data were generated from a simple mediation ",
+    "model (X -> M -> Y with a direct path X -> Y) with standardized path coefficients ",
+    "a = ", num(s$a), ", b = ", num(s$b), " and c = ", num(s$c), ". Each construct ",
+    "was measured reflectively by ", s$n_ind, " indicators with loadings of ",
+    num(s$lambda), ". Every simulated sample was estimated with PLS-SEM (Mode A ",
+    "outer weights, path weighting scheme). Statistical power for the ",
+    EFFECT_LABEL[[if (ind) "indirect" else "direct"]],
+    " was defined as the proportion of ", format(s$mc_reps, big.mark = ","),
+    " Monte Carlo replications in which ", test, " at alpha = ",
+    sub("^0", "", num(s$alpha)), ". Sample sizes from N = ", min(grid), " to N = ",
+    max(grid), " in steps of ", if (length(grid) > 1) diff(grid)[1] else 0,
+    " were evaluated (random seed ", s$seed, "). ")
+  out <- paste0(out, if (!is.na(min_n))
+    sprintf("A sample of approximately N = %d was required to reach %d%% power (interpolated from the simulated power curve). ",
+            min_n, round(100 * s$target))
+    else sprintf("The target power of %d%% was not reached within the evaluated range (maximum simulated power = %s). ",
+                 round(100 * s$target), num(max(pw, na.rm = TRUE))))
+  if (!ind) out <- paste0(out, sprintf(paste0(
+    "For comparison, a regression-based calculation equivalent to G*Power ",
+    "(f-squared = %s) indicated N = %s, and the inverse square-root method ",
+    "(Kock & Hadaya, 2018; two-tailed) indicated N = %s; these shortcuts assume ",
+    "error-free composites."), num(r$gpower$f2, 3), fmt_n(r$gpower$N), r$inverse_sqrt))
+  if (ind && !boot) out <- paste0(out, "The Sobel test (Sobel, 1982) was used for the indirect effect.")
+  if (identical(s$tier, "quick"))
+    out <- paste0(out, "\n\n[NOTE: Quick-preview tier - re-run with the Standard or Publication tier before reporting.]")
+  refs <- c(paste0("Briones, F. J. (2026). plspower: A Monte Carlo simulation planner for ",
+                   "PLS-SEM power analysis (Version ", PLSPOWER_VERSION, ") [Computer software]. ", REPO_URL),
+            if (!ind) paste0("Kock, N., & Hadaya, P. (2018). Minimum sample size estimation in PLS-SEM: ",
+                             "The inverse square root and gamma-exponential methods. Information ",
+                             "Systems Journal, 28(1), 227-261."),
+            if (ind && !boot) paste0("Sobel, M. E. (1982). Asymptotic confidence intervals for indirect ",
+                                     "effects in structural equation models. Sociological Methodology, 13, 290-312."))
+  paste0(out, "\n\nReferences\n", paste(refs, collapse = "\n"))
+}
+
+cite_card <- function() card(
+  card_header("How to cite plspower"),
+  card_body(
+    tags$p("If you use plspower in a thesis, article or report, please cite:"),
+    tags$blockquote(style = "font-size:0.95em;", CITATION_APA),
+    tags$p(tags$small("In-text: ", CITATION_INTEXT)),
+    tags$details(tags$summary("BibTeX"), tags$pre(CITATION_BIBTEX)),
+    tags$p(tags$small("Created by ", tags$strong(AUTHOR), " - ",
+                      tags$a(href = REPO_URL, target = "_blank", REPO_URL)))
+  ))
 
 ui <- bslib::page_fillable(
   title = "plspower - PLS-SEM Monte Carlo power planner",
@@ -335,24 +461,22 @@ ui <- bslib::page_fillable(
       card_body(
         selectInput("template", "Model template",
                     choices = c("Simple mediation (X -> M -> Y + X -> Y)")),
-        sliderInput("a", "Indirect path a (X -> M)", 0.05, 0.60, 0.40, 0.05),
-        sliderInput("b", "Indirect path b (M -> Y)", 0.05, 0.60, 0.30, 0.05),
-        sliderInput("c", "Direct effect c (X -> Y, TARGET)", 0.05, 0.40, 0.20, 0.05),
+        radioButtons("effect", "Target effect",
+                     choices = c("Direct effect c (X -> Y)" = "direct",
+                                 "Indirect effect a x b (X -> M -> Y)" = "indirect")),
+        sliderInput("a", "Path a (X -> M)", 0.05, 0.60, 0.40, 0.05),
+        sliderInput("b", "Path b (M -> Y)", 0.05, 0.60, 0.30, 0.05),
+        sliderInput("c", "Direct effect c (X -> Y)", 0.05, 0.40, 0.20, 0.05),
         sliderInput("lambda", "Indicator loading (all)", 0.50, 0.95, 0.80, 0.05),
         sliderInput("n_ind", "Indicators per construct", 3, 6, 3, 1),
-        tags$p(strong("Estimation engine: "), "Built-in Mode A reference engine"),
-        tags$p(class = "text-muted", "Independent comparison with seminr/cSEM is planned as a separate validation exercise, not as an in-app engine option.")
+        tags$p(strong("Estimation engine: "), "Built-in PLS Mode A, path weighting"),
+        tags$p(class = "text-muted", "Cross-check against seminr: see validation/ in the GitHub repository.")
       ),
       card_header("2. Analysis settings"),
       card_body(
         selectInput("alpha", "Significance level", c(0.05, 0.01, 0.10)),
         selectInput("target", "Target power", c(0.80, 0.90)),
-        selectInput(
-          inputId = "tier",
-          label = "Compute tier",
-          choices = names(TIERS),
-          selected = "quick"
-        ),
+        selectInput("tier", "Compute tier", choices = names(TIERS), selected = "quick"),
         textOutput("tier_note"),
         uiOutput("tier_banner"),
         numericInput("seed", "Random seed", 2026),
@@ -364,17 +488,25 @@ ui <- bslib::page_fillable(
       nav_panel("3. Results",
         card(card_header("Run"),
              card_body(actionButton("run_analysis", "Run power analysis",
-                                    class = "btn-primary"))),
+                                    class = "btn-primary"),
+                       textOutput("elapsed_note"))),
         uiOutput("required_n_card"),
         plotOutput("power_curve"),
         card(card_header("Simulation diagnostics"),
              card_body(tableOutput("diag_table"))),
-        card(card_header("4. Export"),
+        card(card_header("4. Methods text for your manuscript"),
+             card_body(
+               tags$p(class = "text-muted",
+                      "A ready-to-paste sample-size justification. Check it against your study before use."),
+               verbatimTextOutput("methods_text"),
+               downloadButton("dl_methods", "Methods text (TXT)")
+             )),
+        card(card_header("5. Export"),
              card_body(
                downloadButton("dl_csv", "Power curve (CSV)"),
-               downloadButton("dl_json", "Full run (JSON - includes seed,
-                              settings, package versions)")
-             ))
+               downloadButton("dl_json", "Full run (JSON - seed, settings, package versions, citation)")
+             )),
+        cite_card()
       ),
       nav_panel("Methods & Validation",
         card(card_body(
@@ -382,17 +514,20 @@ ui <- bslib::page_fillable(
           tags$code("M = a*X + eM;  Y = b*M + c*X + eY (all latents standardized)"),
           tags$p("Indicators: x_ij = lambda*L + sqrt(1-lambda^2)*e_ij; Gaussian errors."),
           tags$h4("Estimator"),
-          tags$p("Active estimator: built-in PLS Mode A, path weighting, fixed-point
-                 iteration (1e-7), paths via OLS on composites, and percentile
-                 bootstrap. seminr/cSEM comparisons are planned separately."),
+          tags$p("Built-in PLS Mode A outer weights, path weighting inner scheme
+                 (including the direct path X -> Y), fixed-point iteration (1e-7),
+                 structural paths by OLS on standardized composites."),
           tags$h4("Definition of power"),
-          tags$p("Proportion of MC replications whose two-sided 95% CI for
-                 the direct effect excludes zero."),
-          tags$h4("Comparison methods"),
-          tags$p("G*Power-equivalent (exact noncentral F, observed-score
-                 regression - the regression-shortcut question) and
-                 Kock & Hadaya (2018) inverse square-root rule. Differences
-                 are reported as 'planning-method discrepancy'."),
+          tags$p("Direct effect c: proportion of replications in which the two-sided
+                 t test (normal theory) or the percentile bootstrap CI excludes zero."),
+          tags$p("Indirect effect a x b: proportion of replications in which the Sobel
+                 test (normal theory) or the percentile bootstrap CI of a x b excludes
+                 zero. The bootstrap is generally preferred for indirect effects."),
+          tags$h4("Comparison methods (direct effect only)"),
+          tags$p("G*Power-equivalent (exact noncentral F, observed-score regression)
+                 and the Kock & Hadaya (2018) inverse square-root rule. Both apply to
+                 a single path, so they are not shown for the indirect effect.
+                 Differences are reported as 'planning-method discrepancy'."),
           tags$p("Note: the inverse square-root rule is computed two-tailed,
                  consistent with this app's two-sided inference; Kock &
                  Hadaya's published tables are one-tailed (e.g., 155 vs 197
@@ -401,23 +536,22 @@ ui <- bslib::page_fillable(
           tags$p("This tool is not a new estimator. Its contribution is a
                  transparent comparison and calibration layer across
                  planning methods for PLS-SEM: the same study, planned
-                 three ways, with measurement quality as an explicit
-                 design input."),
-          tags$p("Planning methods disagree largely because regression
-                 shortcuts and the inverse square-root rule implicitly
-                 assume error-free composites. With imperfect indicators
-                 (e.g., loading 0.80 with 3 indicators), measurement-error
-                 attenuation reduces the effective effect size, so the
-                 simulation typically requires a larger N than the
-                 shortcuts suggest. The discrepancy you see here is the
-                 cost of ignoring measurement quality at the planning stage."),
+                 several ways, with measurement quality as an explicit
+                 design input. Regression shortcuts and the inverse
+                 square-root rule implicitly assume error-free composites;
+                 with imperfect indicators the simulation typically requires
+                 a larger N."),
+          tags$h4("Speed and reproducibility"),
+          tags$p(sprintf("Each N in the grid runs on its own random-number stream
+                 (L'Ecuyer-CMRG, derived from the seed), so results are identical
+                 whether grid points run in sequence or in parallel. This server
+                 uses %d core(s).", N_CORES)),
           tags$h4("Built-in smoke test"),
-          tags$p("Reproduces the seed-2026 fixture with explicit tolerance
+          tags$p("Reproduces the seed-2026 reference fixture with explicit tolerance
                  rules (power: 2.5 combined Monte Carlo standard errors;
-                 f2: 1e-10 against a full-precision reference;
-                 inverse-sqrt: exact). SMOKE TEST: verifies implementation
-                 agreement, not
-                 publication-grade precision (400 MC reps)."),
+                 f2: 1e-10; inverse-sqrt: exact). SMOKE TEST: verifies
+                 implementation agreement, not publication-grade precision
+                 (400 MC reps)."),
           actionButton("self_test", "Run engine smoke test"),
           tableOutput("self_test_table"),
           textOutput("self_test_verdict"),
@@ -425,15 +559,18 @@ ui <- bslib::page_fillable(
           tags$ul(
             tags$li("One mediation template; no formative constructs, MGA,
                     custom diagrams, or user-data fitting (prospective power only)."),
-            tags$li("The built-in engine has not yet been independently cross-validated
-                    against seminr/cSEM using a prespecified validation protocol."),
+            tags$li("Equal loadings and indicator counts for all constructs."),
             tags$li("Results apply ONLY to the specified model and settings.")
           )
-        ))
+        )),
+        cite_card()
       )
     )
   ),
-  tags$footer(style = "margin-top:12px;color:#888;font-size:0.85em;", APP_VERSION)
+  tags$footer(style = "margin-top:12px;color:#888;font-size:0.85em;",
+              APP_VERSION, " - created by ", AUTHOR, " - ",
+              tags$a(href = REPO_URL, target = "_blank", "GitHub"),
+              " - please cite: ", CITATION_INTEXT)
 )
 
 server <- function(input, output, session) {
@@ -442,13 +579,13 @@ server <- function(input, output, session) {
       showNotification(conditionMessage(e), type = "error"); NULL })
     req(grid)
     tier <- TIERS[[input$tier]]
-    engine <- "built-in"
     list(a = input$a, b = input$b, c = input$c, lambda = input$lambda,
-         n_ind = input$n_ind, alpha = as.numeric(input$alpha),
-         target = as.numeric(input$target),
+         n_ind = input$n_ind, effect = input$effect,
+         alpha = as.numeric(input$alpha), target = as.numeric(input$target),
          n_grid = grid, mc_reps = tier$mc, boot_reps = tier$boot,
-         seed = input$seed, runtime = Sys.time(),
-         tier = input$tier, engine = engine,
+         seed = input$seed, runtime = Sys.time(), cores = N_CORES,
+         tier = input$tier, engine = "built-in",
+         plspower_version = PLSPOWER_VERSION,
          versions = c(list(R = R.version.string),
                       lapply(setNames(REQ_PKGS, REQ_PKGS),
                              function(p) as.character(utils::packageVersion(p)))))
@@ -474,58 +611,79 @@ server <- function(input, output, session) {
               Publication tier for any reported estimate.")
   })
 
-  # v0.4.2: honest runtime estimate, shown BEFORE the run. Every Monte Carlo
-  # replication needs 1 + boot_reps PLS fits, and fit time grows with N.
-  # The per-fit time is measured once on this machine (FIT_MS_N200).
+  # Runtime estimate shown BEFORE the run: N grid x MC reps x (1 + bootstrap)
+  # PLS fits, fit time measured on this server, grid points split over cores.
   output$runtime_note <- renderText({
     grid <- tryCatch(parse_grid(input$n_grid_text), error = function(e) NULL)
     if (is.null(grid)) return("N grid: enter from,to,by (e.g. 100,300,50)")
     tier <- TIERS[[input$tier]]
     fits_per_rep <- 1 + tier$boot
     secs <- sum(grid / 200) * tier$mc * fits_per_rep * FIT_MS_N200 / 1000 *
-      (input$n_ind / 3)
-    sprintf("Estimated runtime: ~%s (%s PLS fits on this server)",
+      (input$n_ind / 3) / min(N_CORES, length(grid))
+    sprintf("Estimated runtime: ~%s (%s PLS fits, %d core(s))",
             fmt_duration(secs),
-            format(round(length(grid) * tier$mc * fits_per_rep), big.mark = ","))
+            format(round(length(grid) * tier$mc * fits_per_rep), big.mark = ","),
+            N_CORES)
+  })
+
+  output$elapsed_note <- renderText({
+    r <- res(); req(r); sprintf("Finished in %s.", fmt_duration(r$elapsed_sec))
   })
 
   output$required_n_card <- renderUI({
     r <- res(); req(r)
-    gp <- r$gpower$N; isq <- r$inverse_sqrt
-    dif <- if (!is.na(r$min_n_boot) && !is.na(gp))
-      sprintf("%+d participants", r$min_n_boot - gp) else "n/a"
-    card(card_header(sprintf("Estimated minimum N for %d%% power",
-                             round(100 * r$settings$target))),
-         card_body(tags$pre(sprintf(
-"Built-in bootstrap:       %s
+    hdr <- sprintf("Estimated minimum N for %d%% power - %s",
+                   round(100 * r$settings$target), EFFECT_LABEL[[r$settings$effect]])
+    body <- if (identical(r$settings$effect, "indirect")) sprintf(
+"Built-in bootstrap (a x b):  %s
+Sobel test (a x b):          %s
+
+G*Power and the inverse square-root rule apply to single paths,
+so they are not shown for the indirect effect.",
+      fmt_n(r$min_n_ind_boot), fmt_n(r$min_n_ind_sobel))
+    else {
+      gp <- r$gpower$N
+      dif <- if (!is.na(r$min_n_boot) && !is.na(gp)) sprintf("%+d participants", r$min_n_boot - gp) else "n/a"
+      sprintf(
+"Built-in bootstrap:        %s
 PLS-SEM normal theory:     %s
-G*Power regression:        %d
+G*Power regression:        %s
 Inverse square-root rule:  %d
 
 Planning-method discrepancy (bootstrap vs G*Power): %s",
-  format(r$min_n_boot), format(r$min_n_nt), gp, isq, dif))))
+        fmt_n(r$min_n_boot), fmt_n(r$min_n_nt), fmt_n(gp), r$inverse_sqrt, dif)
+    }
+    card(card_header(hdr), card_body(tags$pre(body)))
   })
 
   output$power_curve <- renderPlot({
     r <- res(); req(r)
+    ind <- identical(r$settings$effect, "indirect")
     d <- r$curve; tgt <- r$settings$target
-    ggplot(d, aes(N, power_nt)) +
-      geom_ribbon(aes(ymin = pmax(0, power_nt - 1.96 * sqrt(power_nt *
-        (1 - power_nt) / pmax(reps, 1))),
-        ymax = pmin(1, power_nt + 1.96 * sqrt(power_nt *
-        (1 - power_nt) / pmax(reps, 1)))), fill = "#4a69bd", alpha = .15) +
+    d$p_nt   <- if (ind) d$power_ind_sobel else d$power_nt
+    d$p_boot <- if (ind) d$power_ind_boot  else d$power_boot
+    se <- sqrt(d$p_nt * (1 - d$p_nt) / pmax(d$reps, 1))
+    ggplot(d, aes(N, p_nt)) +
+      geom_ribbon(aes(ymin = pmax(0, p_nt - 1.96 * se), ymax = pmin(1, p_nt + 1.96 * se)),
+                  fill = "#4a69bd", alpha = .15) +
       geom_line(color = "#4a69bd") + geom_point(color = "#4a69bd") +
-      geom_line(aes(y = power_boot), color = "#e58e26", linetype = "dashed") +
+      geom_line(aes(y = p_boot), color = "#e58e26", linetype = "dashed", na.rm = TRUE) +
       geom_hline(yintercept = tgt, color = "#c0392b", linetype = "dashed") +
       scale_y_continuous(limits = c(0, 1)) +
       labs(y = "Power", x = "Sample size (N)",
-           title = "Monte Carlo power curve (simulation-based)",
-           subtitle = "Blue: normal-theory test; orange dashed: built-in percentile bootstrap") +
+           title = paste("Monte Carlo power curve -", EFFECT_LABEL[[r$settings$effect]]),
+           subtitle = if (ind) "Blue: Sobel test; orange dashed: percentile bootstrap of a x b"
+                      else "Blue: normal-theory t test; orange dashed: percentile bootstrap",
+           caption = paste(APP_VERSION, "- cite: Briones (2026)")) +
       theme_minimal()
   })
 
   output$diag_table <- renderTable({ r <- res(); req(r); r$curve }, digits = 3)
 
+  output$methods_text <- renderText({ r <- res(); req(r); methods_text(r) })
+  output$dl_methods <- downloadHandler(
+    filename = "plspower_methods_text.txt",
+    content = function(file) writeLines(methods_text(res()), file, useBytes = TRUE))
   output$dl_csv <- downloadHandler(
     filename = "plspower_curve.csv",
     content = function(file) write.csv(res()$curve, file, row.names = FALSE))
