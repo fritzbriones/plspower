@@ -1,6 +1,8 @@
 # plspower — A Monte Carlo Simulation Planner for PLS-SEM Power Analysis
 
-**Status: v0.6.0 — models with 1–3 mediators (parallel or serial) and
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.24291129.svg)](https://doi.org/10.5281/zenodo.24291129)
+
+**Status: v0.8.0 — models with 1–3 mediators (parallel or serial) and
 construct-specific measurement; engine cross-validated against `seminr` 2.6.0
 for six model types (all paths agree within 2e-7; power identical — see
 [Validation](#validation-protocol-read-before-reporting-anything)).
@@ -285,8 +287,8 @@ MIT License. See LICENSE.
 If you use plspower in a thesis, article or report, please cite:
 
 > Briones, F. J. (2026). *plspower: A Monte Carlo simulation planner for
-> PLS-SEM power analysis* (Version 0.8.0) [Computer software]. GitHub.
-> https://github.com/fritzbriones/plspower
+> PLS-SEM power analysis* (Version 0.8.0) [Computer software]. Zenodo.
+> https://doi.org/10.5281/zenodo.24291129
 
 In-text: (Briones, 2026). GitHub's **"Cite this repository"** button
 (from `CITATION.cff`) gives APA and BibTeX.
@@ -297,6 +299,8 @@ In-text: (Briones, 2026). GitHub's **"Cite this repository"** button
   title   = {plspower: A Monte Carlo simulation planner for PLS-SEM power analysis},
   year    = {2026},
   version = {0.8.0},
-  url     = {https://github.com/fritzbriones/plspower}
+  publisher = {Zenodo},
+  doi     = {10.5281/zenodo.24291129},
+  url     = {https://doi.org/10.5281/zenodo.24291129}
 }
 ```
