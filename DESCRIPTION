@@ -1,7 +1,7 @@
 Package: plspower
 Type: Shiny Application
 Title: Monte Carlo Power Analysis Planner for PLS-SEM
-Version: 0.6.0
+Version: 0.6.1
 Authors@R: person("Fritz Jeffry", "Briones", role = c("aut", "cre"),
     email = "mrcute808@gmail.com")
 Description: A Shiny application for prospective Monte Carlo power analysis

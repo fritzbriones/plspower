@@ -79,6 +79,25 @@ shiny::runApp("app.R")
 Or deploy `app.R` as a single-file Shiny app to shinyapps.io
 (`rsconnect::deployApp(appDir = ".", appFiles = "app.R")`).
 
+## What's new in v0.6.1 (mobile and usability fixes)
+
+- **Live status while a run is going**: elapsed time, the estimate, and a
+  reminder to keep the page open. Errors are now shown instead of failing
+  silently. The smoke test shows a "running" message too.
+- **Download buttons appear only after a run** (tapping them before gave an
+  error), with a short explanation of the CSV and the JSON run record.
+- **Correct CPU count on cloud hosting**: uses `parallelly::availableCores()`,
+  which respects container limits. `detectCores()` could report the host's
+  cores, so runs took much longer than the estimate.
+- **Quick tier is 5× faster**: 200 MC × 100 bootstrap resamples (was 500);
+  still a preview — use Standard or Publication for reporting.
+- **Phones can reconnect** to the same session after a short interruption
+  (switching apps, screen lock).
+
+**Using plspower on a phone:** keep the page open and the screen on until
+the results appear; use Quick tier to explore and run Standard or
+Publication tier on a computer.
+
 ## What's new in v0.6.0
 
 - **1–3 mediators**, **parallel** (X → each M → Y) or **serial**
@@ -207,7 +226,7 @@ MIT License. See LICENSE.
 If you use plspower in a thesis, article or report, please cite:
 
 > Briones, F. J. (2026). *plspower: A Monte Carlo simulation planner for
-> PLS-SEM power analysis* (Version 0.6.0) [Computer software]. GitHub.
+> PLS-SEM power analysis* (Version 0.6.1) [Computer software]. GitHub.
 > https://github.com/fritzbriones/plspower
 
 In-text: (Briones, 2026). GitHub's **"Cite this repository"** button
@@ -218,7 +237,7 @@ In-text: (Briones, 2026). GitHub's **"Cite this repository"** button
   author  = {Briones, Fritz Jeffry},
   title   = {plspower: A Monte Carlo simulation planner for PLS-SEM power analysis},
   year    = {2026},
-  version = {0.6.0},
+  version = {0.6.1},
   url     = {https://github.com/fritzbriones/plspower}
 }
 ```
