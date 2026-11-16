@@ -4,7 +4,7 @@
 construct-specific measurement; engine cross-validated against `seminr` 2.6.0
 for six model types (all paths agree within 2e-7; power identical — see
 [Validation](#validation-protocol-read-before-reporting-anything)).
-Built-in smoke test PASSED (Nov 16, 2026).** Quick-preview results are never
+Built-in smoke test PASSED on Posit Connect Cloud (Nov 16, 2026).** Quick-preview results are never
 publication-grade by design.
 
 **Created by Fritz Jeffry Briones.** If you use plspower, please
@@ -19,16 +19,17 @@ publication-grade by design.
 
 `plspower` is a **prospective** power-analysis planner for PLS-SEM studies.
 You specify a mediation model — X → 1 to 3 mediators → Y (parallel or
-serial) plus the direct effect X → Y — with loadings and indicator counts
-per construct,
-measurement quality, and inference rule; the app runs a seed-controlled
-Monte Carlo simulation in the background and reports:
+serial) plus the direct effect X → Y — with measurement quality (loadings
+and indicator counts, per construct if you like) and an inference rule; the
+app runs a seed-controlled Monte Carlo simulation in the background and
+reports:
 
 - power for the **direct effect**, the **total indirect effect**, each
   **specific indirect effect** (parallel) or the **serial indirect effect**,
 - the power curve over a sample-size grid (normal-theory / Sobel and
   percentile-bootstrap PLS-SEM inference),
-- the minimum N for your target power (80% or 90%),
+- the minimum N for your target power (80% or 90%) — use **Find my N** to
+  search a wide range (e.g. 50–1,000) automatically, or set your own N grid,
 - and a **comparison** against two common planning shortcuts:
   the G*Power-equivalent regression calculation (exact noncentral-F) and
   the Kock–Hadaya (2018) inverse square-root rule (direct effect),
@@ -128,7 +129,8 @@ Or deploy `app.R` as a single-file Shiny app to shinyapps.io
 ## Model scope (v1, deliberately narrow)
 
 - X → 1–3 mediators (parallel or serial) → Y, with direct effect X → Y
-- Reflective (Mode A) constructs, 1–12 indicators each, loadings 0.30–0.97
+- Reflective (Mode A) constructs: one setting for all (2–8 indicators,
+  loading 0.50–0.95) or per construct (1–12 indicators, loading 0.30–0.97)
 - Direct, total indirect, specific indirect or serial indirect power; two-sided inference
 - Normal-theory and percentile-bootstrap tests (bootstrap power is
   computed over valid bootstrap decisions only)
@@ -143,7 +145,7 @@ Or deploy `app.R` as a single-file Shiny app to shinyapps.io
    f²: 1e-10 against a full-precision reference; inverse-sqrt: exact
    integer). At 400 Monte Carlo replications this verifies
    *implementation agreement*, not publication-grade precision.
-   **Status: PASSED on Posit Cloud (R 4.6.2), Nov 15, 2026.**
+   **Status: PASSED on Posit Connect Cloud, v0.6.0, Nov 16, 2026.**
 2. **Independent cross-validation against seminr**
    (`Rscript validation/cross_validate_seminr.R`): the built-in engine and
    `seminr::estimate_pls()` (Mode A, path weighting) fit the same simulated
@@ -164,12 +166,12 @@ so every run is reproducible.
 
 ## Known limitations
 
-- The built-in engine agrees with seminr for this model; it has not been
-  compared with cSEM or SmartPLS.
+- The built-in engine agrees with seminr for all supported models; it has
+  not been compared with cSEM or SmartPLS.
 - One X and one Y; up to three mediators; no moderators, formative or
   higher-order constructs, or multi-group analysis.
-- One model family only (v1); no formative constructs, multi-group
-  analysis, higher-order constructs, or custom path diagrams.
+- No custom path diagrams: models are built from the mediator count and
+  structure options.
 - Percentile bootstrap only (BCa planned).
 - Results apply only to the specified model, settings, and inference rule.
 
