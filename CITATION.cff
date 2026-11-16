@@ -1,0 +1,17 @@
+cff-version: 1.2.0
+message: "If you use plspower, please cite it as below."
+title: "plspower: A Monte Carlo simulation planner for PLS-SEM power analysis"
+type: software
+authors:
+  - family-names: Briones
+    given-names: Fritz Jeffry
+version: 0.6.0
+date-released: 2026-11-16
+license: MIT
+repository-code: "https://github.com/fritzbriones/plspower"
+keywords:
+  - PLS-SEM
+  - power analysis
+  - sample size
+  - mediation
+  - Monte Carlo simulation
