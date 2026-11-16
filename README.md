@@ -1,7 +1,8 @@
 # plspower — A Monte Carlo Simulation Planner for PLS-SEM Power Analysis
 
-**Status: v0.4.1 — smoke test PASSED on a hosted R runtime (Posit Cloud,
-Nov 15, 2026).** This is a research-planning tool under active development.
+**Status: v0.4.2 — engine fix (see "Changes in v0.4.2"); built-in smoke test
+PASSED locally (R 4.3.3, Nov 16, 2026). v0.4.1 previously passed on Posit
+Cloud (R 4.6.2, Nov 15, 2026); re-run the smoke test after redeploying.** This is a research-planning tool under active development.
 The built-in engine is the single supported estimator; independent
 cross-validation against established PLS-SEM software is planned as a
 separate validation exercise. Quick-preview results are never
@@ -59,7 +60,7 @@ that cost visible.
 ## Quick start
 
 ```r
-# Requires R with:
+# Requires R with shiny >= 1.8.1 and bslib >= 0.7.0 (for ExtendedTask):
 install.packages(c("shiny", "bslib", "ggplot2", "future",
                    "promises", "jsonlite"))
 
@@ -68,6 +69,24 @@ shiny::runApp("app.R")
 
 Or deploy `app.R` as a single-file Shiny app to shinyapps.io
 (`rsconnect::deployApp(appDir = ".", appFiles = "app.R")`).
+
+## Changes in v0.4.2
+
+- **Engine: path weighting now includes the X → Y link.** v0.4.1 updated the
+  outer weights as if the inner model were the chain X → M → Y, ignoring the
+  direct effect X → Y (the target path). Single-replication estimates of the
+  direct effect could differ by up to ~0.16 from the standard Lohmöller path
+  weighting scheme (mean difference ≈ −0.01). The smoke-test fixture still
+  passes within its tolerances.
+- **Honest runtime estimate, shown before you click Run.** The old estimate
+  assumed ~0.2 ms per fit and showed "~1 minute" for runs that took hours.
+  The app now times one PLS fit on the server at startup and counts
+  N-grid × MC replications × (1 + bootstrap resamples) fits.
+- **Default N grid is now 100,300,50** (5 points instead of 21). Quick tier
+  with bootstrap is still a long run; the estimate tells you how long.
+- **Background runs actually run in the background** (`future::plan(multisession)`).
+- **N grid input is validated** (clear error instead of a crash).
+- **JSON export now includes package versions**, as documented.
 
 ## Model scope (v1, deliberately narrow)
 
@@ -134,5 +153,5 @@ MIT License. See LICENSE.
 ## Citation (temporary)
 
 Briones, F. J. (2026). *plspower: A Monte Carlo simulation planner for
-PLS-SEM power analysis* (Version 0.4.1) [Computer software]. GitHub.
+PLS-SEM power analysis* (Version 0.4.2) [Computer software]. GitHub.
 https://github.com/fritzbriones/plspower
