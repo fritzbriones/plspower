@@ -6,7 +6,7 @@
 construct-specific measurement; engine cross-validated against `seminr` 2.6.0
 for six model types (all paths agree within 2e-7; power identical — see
 [Validation](#validation-protocol-read-before-reporting-anything)).
-Built-in smoke test PASSED on Posit Connect Cloud (Nov 16, 2026).** Quick-preview results are never
+Built-in smoke test and seminr cross-validation PASSED on v0.8.0 (Nov 17, 2026).** Quick-preview results are never
 publication-grade by design.
 
 **Created by Fritz Jeffry Briones.** If you use plspower, please
@@ -225,13 +225,16 @@ Publication tier on a computer.
    f²: 1e-10 against a full-precision reference; inverse-sqrt: exact
    integer). At 400 Monte Carlo replications this verifies
    *implementation agreement*, not publication-grade precision.
-   **Status: PASSED on Posit Connect Cloud, v0.7.0, Nov 17, 2026** (re-run after deploying v0.7.1).
+   **Status: PASSED, v0.8.0, Nov 17, 2026** (local R run: minimum N 254
+   vs reference 254, all checks pass). Last confirmed on Posit Connect
+   Cloud with v0.7.1 (Nov 17, 2026); the estimation engine is unchanged
+   in v0.8.0.
 2. **Independent cross-validation against seminr**
    (`Rscript validation/cross_validate_seminr.R`): the built-in engine and
    `seminr::estimate_pls()` (Mode A, path weighting) fit the same simulated
    datasets. Acceptance rules: every structural path within 1e-4 and power
    for every effect within ±0.03 at every N.
-   **Status: PASSED (v0.6.0 vs seminr 2.6.0, Nov 16, 2026)** — 6 models
+   **Status: PASSED (v0.8.0 vs seminr 2.6.0, Nov 17, 2026)** — 6 models
    (simple; parallel with 2 and 3 mediators; serial with 2 and 3 mediators;
    equal and unequal loadings/indicator counts) × N = 100, 200, 300 × 250
    datasets: largest path difference 1.3e-7, largest power difference 0.000
