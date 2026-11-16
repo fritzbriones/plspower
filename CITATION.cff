@@ -5,10 +5,17 @@ type: software
 authors:
   - family-names: Briones
     given-names: Fritz Jeffry
+    orcid: "https://orcid.org/0009-0004-3213-7623"
 version: 0.8.0
 date-released: 2026-11-17
 license: MIT
 repository-code: "https://github.com/fritzbriones/plspower"
+url: "https://01a1dfae-8fd9-812a-b8f2-f8ffdfb1f80c.share.connect.posit.cloud/"
+abstract: >-
+  Free web app for a priori sample-size planning in PLS-SEM. It estimates
+  power by Monte Carlo simulation (PLS Mode A, path weighting, percentile
+  bootstrap) for direct and indirect effects in models with up to three
+  parallel or serial mediators, and finds the minimum N for a target power.
 keywords:
   - PLS-SEM
   - power analysis
