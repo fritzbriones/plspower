@@ -1,6 +1,6 @@
-# plspower - single-file deployable v0.6.1 (concatenated from modular project)
+# plspower - single-file deployable v0.7.0 (concatenated from modular project)
 # Author: Fritz Jeffry Briones - https://github.com/fritzbriones/plspower
-# Cite: Briones, F. J. (2026). plspower (Version 0.6.1) [Computer software].
+# Cite: Briones, F. J. (2026). plspower (Version 0.7.0) [Computer software].
 # Deploy: paste into shinyapps.io as app.R, or run with shiny::runApp()
 # Requires: shiny, bslib, ggplot2, future, promises, jsonlite
 
@@ -203,7 +203,15 @@ one_rep <- function(n, p, boot_reps, alpha) {
 # Power at one N: for each effect e, columns <e>_nt, <e>_boot, <e>_bias.
 power_at_n <- function(n, p, mc_reps, boot_reps, alpha) {
   mod <- as_model(p); en <- names(mod$effects)
-  r <- lapply(seq_len(mc_reps), function(i) one_rep(n, mod, boot_reps, alpha))
+  # v0.7.0: when the app sets option plspower.progress_file, every finished
+  # replication appends one byte to that file; the app shows a progress bar
+  # from the file size. (No effect on results or random numbers.)
+  pf <- getOption("plspower.progress_file")
+  r <- lapply(seq_len(mc_reps), function(i) {
+    out <- one_rep(n, mod, boot_reps, alpha)
+    if (!is.null(pf)) try(cat(".", file = pf, append = TRUE), silent = TRUE)
+    out
+  })
   r <- r[!vapply(r, is.null, logical(1))]
   out <- data.frame(N = n)
   for (k in seq_along(en)) {
@@ -420,7 +428,7 @@ library(jsonlite)
 
 if (!exists("%||%", baseenv())) `%||%` <- function(x, y) if (is.null(x)) y else x
 
-PLSPOWER_VERSION <- "0.6.1"
+PLSPOWER_VERSION <- "0.7.0"
 APP_VERSION <- paste("plspower", PLSPOWER_VERSION)
 AUTHOR <- "Fritz Jeffry Briones"
 REPO_URL <- "https://github.com/fritzbriones/plspower"
@@ -473,7 +481,7 @@ future::plan(future::multisession, workers = 2)
 TIERS <- list(
   quick        = list(mc = 200,  boot = 100,   label = "Quick preview (200 MC x 100 boot)"),
   standard     = list(mc = 1000, boot = 2000,  label = "Standard (1,000 MC x 2,000 boot)"),
-  publication  = list(mc = 5000, boot = 10000, label = "Publication (5,000 MC x 10,000 boot)")
+  publication  = list(mc = 5000, boot = 2000,  label = "Publication (5,000 MC x 2,000 boot)")
 )
 
 # ---- Effects and labels -----------------------------------------------------
@@ -526,6 +534,7 @@ run_power_simulation <- function(settings) {
     stop("Only the built-in engine is currently integrated and supported.")
   e <- settings$effect
   t0 <- Sys.time()
+  on.exit(options(plspower.progress_file = NULL), add = TRUE)
   coarse <- NULL; search_note <- NULL
   if (identical(settings$mode, "find")) {
     cg <- coarse_grid(settings$n_min, settings$n_max)
@@ -544,14 +553,17 @@ run_power_simulation <- function(settings) {
       settings$n_grid <- fine_grid(lower, cg[i])
       if (i == 1) search_note <- sprintf(paste0("Power already reached the target at the ",
         "minimum N (%d); the fine grid starts lower. Lower the minimum N to scan further down."), cg[1])
+      if (!is.null(settings$progress_file)) options(plspower.progress_file = settings$progress_file)
       curve <- power_curve(mod, settings$n_grid, settings$mc_reps, settings$boot_reps,
                            settings$alpha, settings$seed + 1L, cores = settings$cores)
     }
   } else {
+    if (!is.null(settings$progress_file)) options(plspower.progress_file = settings$progress_file)
     curve <- power_curve(mod, settings$n_grid, settings$mc_reps,
                          settings$boot_reps, settings$alpha, settings$seed,
                          cores = settings$cores)
   }
+  options(plspower.progress_file = NULL)
   g <- settings$n_grid; tg <- settings$target
   gp <- gpower_required_n_model(mod, settings$alpha, tg)
   list(
@@ -656,9 +668,20 @@ cite_card <- function() card(
                       tags$a(href = REPO_URL, target = "_blank", REPO_URL)))
   ))
 
+app_header <- tags$div(
+  style = paste("display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 14px;",
+                "padding:12px 16px;margin-bottom:10px;border-radius:10px;",
+                "background:#1f3a5f;color:#fff;"),
+  tags$span(style = "font-size:1.6em;font-weight:700;letter-spacing:.5px;", "plspower"),
+  tags$span(style = "font-size:1em;opacity:.95;", "Sample-size and power planner for PLS-SEM"),
+  tags$span(style = "margin-left:auto;font-size:.85em;opacity:.8;",
+            paste0("v", PLSPOWER_VERSION, " \u00b7 by ", AUTHOR)))
+
 ui <- bslib::page_fillable(
-  title = "plspower - PLS-SEM Monte Carlo power planner",
+  title = "plspower - PLS-SEM power planner",
   theme = NULL,
+  fillable_mobile = FALSE,
+  app_header,
   bslib::layout_columns(
     col_widths = c(4, 8),
     card(
@@ -702,7 +725,16 @@ ui <- bslib::page_fillable(
                  "Scans this range quickly, then runs the full analysis only where power reaches your target.")),
         conditionalPanel("input.mode == 'grid'",
           textInput("n_grid_text", "N grid (from,to,by)", "100,300,50")),
-        textOutput("runtime_note")
+        textOutput("runtime_note"),
+        tags$details(style = "margin-top:8px;",
+          tags$summary(tags$strong("How long will it take?")),
+          tags$p(class = "text-muted", style = "font-size:0.85em;margin:6px 0;",
+                 "Typical Find my N run (scan 50-1,000) for the model above, measured on this server.",
+                 "The needed N is not known in advance, so three cases are shown."),
+          tableOutput("time_guide"),
+          tags$p(class = "text-muted", style = "font-size:0.85em;",
+                 "Tip: explore with Quick (any device), then run Standard or Publication on a computer",
+                 "and keep the page open until it finishes."))
       )
     ),
     navset_card_tab(
@@ -729,36 +761,67 @@ ui <- bslib::page_fillable(
       ),
       nav_panel("Methods & Validation",
         card(card_body(
-          tags$h4("Models"),
-          tags$p("X -> 1 to 3 mediators -> Y, with a direct path X -> Y. Parallel: X -> each
-                 mediator -> Y. Serial: X -> M1 -> M2 (-> M3) -> Y. All paths are
-                 standardized; latent variables have unit variance."),
-          tags$p("Indicators: x_ij = lambda_j*L_j + sqrt(1-lambda_j^2)*e_ij; Gaussian errors.
-                 Loadings and indicator counts can differ per construct."),
-          tags$h4("Estimator"),
-          tags$p("Built-in PLS Mode A outer weights, path weighting inner scheme
-                 (successors: correlations; predecessors: regression weights),
-                 fixed-point iteration (1e-7), structural paths by OLS on
-                 standardized composites."),
-          tags$h4("Definition of power"),
-          tags$p("Direct effect: proportion of replications in which the two-sided
-                 t test or the percentile bootstrap CI excludes zero."),
-          tags$p("Indirect effects (specific, total or serial): proportion of
-                 replications in which the delta-method z test (equal to the Sobel
-                 test for a single a x b) or the percentile bootstrap CI excludes
-                 zero. The bootstrap is generally preferred for indirect effects."),
-          tags$h4("Comparison methods (direct effect only)"),
-          tags$p("G*Power-equivalent (exact noncentral F for the R-squared increase
-                 from X in the regression of Y on its predictors) and the
-                 Kock & Hadaya (2018) inverse square-root rule, computed two-tailed
-                 (their published tables are one-tailed: e.g., 155 vs 197 at
-                 b = 0.20, alpha = 0.05, power = 0.80). Both apply to a single
-                 path, so they are not shown for indirect effects."),
-          tags$h4("Speed and reproducibility"),
-          tags$p(sprintf("Each N in the grid runs on its own random-number stream
-                 (L'Ecuyer-CMRG, derived from the seed), so results are identical
-                 whether grid points run in sequence or in parallel. This server
-                 uses %d core(s).", N_CORES)),
+          withMathJax(),
+          tags$p(class = "text-muted", "Formulas used by this app, in the order they are applied."),
+          tags$h4("1. Model (data generation)"),
+          tags$p("Structural model, all latent variables standardized (variance 1), in causal order X, M1..Mk, Y:"),
+          helpText("$$\\eta_j \\;=\\; \\sum_{i \\to j} \\beta_{ji}\\,\\eta_i \\;+\\; \\zeta_j, \\qquad
+                   \\operatorname{Var}(\\zeta_j) \\;=\\; 1 - \\boldsymbol\\beta_j^{\\top}\\,\\Sigma_{PP}\\,\\boldsymbol\\beta_j$$"),
+          tags$p("Simple mediation: \\(M = aX + \\zeta_M\\), \\(Y = cX + bM + \\zeta_Y\\).
+                  Parallel: \\(X \\to M_j\\) (\\(a_j\\)), \\(M_j \\to Y\\) (\\(b_j\\)).
+                  Serial: \\(X \\to M_1\\) (\\(a\\)), \\(M_j \\to M_{j+1}\\) (\\(d_j\\)), \\(M_k \\to Y\\) (\\(b\\)).
+                  A run is blocked if any \\(\\operatorname{Var}(\\zeta_j) < 0.01\\)."),
+          tags$p("Reflective indicators (loadings \\(\\lambda_j\\), Gaussian errors):"),
+          helpText("$$x_{ij} \\;=\\; \\lambda_j\\,\\eta_j + \\sqrt{1-\\lambda_j^{2}}\\;\\varepsilon_{ij},
+                   \\qquad \\varepsilon_{ij} \\sim N(0,1)$$"),
+          tags$h4("2. PLS-SEM estimation"),
+          tags$p("Indicators are standardized. Composite scores from outer weights \\(\\mathbf w_j\\) (start: all 1):"),
+          helpText("$$\\hat\\eta_j = \\frac{X_j \\mathbf w_j}{\\operatorname{sd}(X_j \\mathbf w_j)}, \\qquad
+                   \\mathbf z_j = \\sum_i e_{ij}\\,\\hat\\eta_i, \\qquad
+                   \\mathbf w_j \\leftarrow \\operatorname{Cov}(X_j, \\mathbf z_j) \\;\\;(\\text{Mode A})$$"),
+          tags$p("Path weighting scheme: \\(e_{ij} = \\operatorname{cor}(\\hat\\eta_i, \\hat\\eta_j)\\) if \\(\\eta_i\\) is a
+                  successor of \\(\\eta_j\\)\\; \\(e_{ij}\\) = coefficient of \\(\\hat\\eta_i\\) in the regression of
+                  \\(\\hat\\eta_j\\) on its predecessors. Repeat until the weights change by less than \\(10^{-7}\\)
+                  (maximum 100 iterations)."),
+          tags$p("Structural paths: OLS on the composite correlation matrix \\(R\\), with \\(P\\) the \\(p\\) predictors of \\(\\eta_j\\):"),
+          helpText("$$\\hat{\\boldsymbol\\beta}_j = R_{PP}^{-1}\\,\\mathbf r_{Pj}, \\qquad
+                   R^2_j = \\hat{\\boldsymbol\\beta}_j^{\\top}\\mathbf r_{Pj}, \\qquad
+                   \\widehat{\\operatorname{Var}}(\\hat{\\boldsymbol\\beta}_j) =
+                   \\frac{1-R^2_j}{n-1-p}\\,R_{PP}^{-1}$$"),
+          tags$h4("3. Significance tests in each simulated sample"),
+          tags$p("Direct effect \\(c\\):"),
+          helpText("$$t = \\frac{\\hat c}{\\operatorname{SE}(\\hat c)}, \\qquad \\text{significant if } |t| > t_{1-\\alpha/2,\\;n-1-p}$$"),
+          tags$p("Indirect effect = sum over chains of products of paths (e.g. \\(ab\\), \\(a\\,d\\,b\\), \\(\\sum_j a_j b_j\\)).
+                  Delta-method standard error, with \\(\\mathbf g\\) the gradient of the effect and \\(V\\) the path covariance
+                  (equal to the Sobel test for a single \\(ab\\)):"),
+          helpText("$$\\operatorname{SE}(\\hat a\\hat b) = \\sqrt{\\hat b^{2}\\operatorname{SE}(\\hat a)^{2} + \\hat a^{2}\\operatorname{SE}(\\hat b)^{2}},
+                   \\qquad \\operatorname{SE} = \\sqrt{\\mathbf g^{\\top} V \\mathbf g}, \\qquad
+                   \\text{significant if } \\left|\\tfrac{\\text{effect}}{\\operatorname{SE}}\\right| > z_{1-\\alpha/2}$$"),
+          tags$p("Percentile bootstrap: refit the model on \\(B\\) resamples (rows drawn with replacement)\\;
+                  significant if the interval \\([q_{\\alpha/2},\\, q_{1-\\alpha/2}]\\) of the \\(B\\) estimates excludes 0."),
+          tags$h4("4. Power and minimum N"),
+          helpText("$$\\widehat{\\text{Power}}(N) = \\frac{1}{R}\\sum_{r=1}^{R} \\mathbb 1[\\text{significant in replication } r],
+                   \\qquad \\operatorname{SE}_{MC} = \\sqrt{\\frac{\\widehat{\\text{Power}}\\,(1-\\widehat{\\text{Power}})}{R}}$$"),
+          tags$p("Minimum N: first grid point \\(N_1\\) with power \\(\\ge\\) target \\(\\pi^*\\), interpolated on the logit scale
+                  from the previous point \\(N_0\\) (powers clamped to [0.001, 0.999]):"),
+          helpText("$$N^* = N_0 + \\frac{\\operatorname{logit}\\pi^* - \\operatorname{logit}\\pi_0}{\\operatorname{logit}\\pi_1 - \\operatorname{logit}\\pi_0}\\,(N_1 - N_0)$$"),
+          tags$p("Find my N: step 1 scans 8 log-spaced N from the minimum to the maximum (200 replications, no bootstrap)\\;
+                  step 2 runs the chosen tier on 5 N values between the last scan point below the target and 1.1 times
+                  the first point above it."),
+          tags$h4("5. Comparison methods (direct effect only)"),
+          tags$p("G*Power-equivalent: exact noncentral F for the increase in \\(R^2\\) from X in the population regression of
+                  Y on its \\(u\\) predictors:"),
+          helpText("$$f^2 = \\frac{R^2_{\\text{full}} - R^2_{\\text{without }X}}{1 - R^2_{\\text{full}}}, \\qquad
+                   F \\sim F(1,\\; N-u-1,\\; \\lambda = f^2 N)$$"),
+          tags$p("Inverse square-root rule (Kock & Hadaya, 2018), computed two-tailed:"),
+          helpText("$$N_{\\min} = \\left\\lceil \\left(\\frac{z_{1-\\alpha/2} + z_{\\pi^*}}{|\\beta_{\\min}|}\\right)^{2} \\right\\rceil$$"),
+          tags$p("Kock & Hadaya's published tables are one-tailed (e.g., 155 vs 197 at \\(\\beta = 0.20\\), \\(\\alpha = 0.05\\),
+                  power 0.80). Both shortcuts apply to a single path and assume error-free composites, so they are not
+                  shown for indirect effects."),
+          tags$h4("6. Speed and reproducibility"),
+          tags$p(sprintf("Each N in the grid runs on its own random-number stream (L'Ecuyer-CMRG, derived from the seed),
+                 so results are identical whether grid points run in sequence or in parallel. This server uses %d core(s).
+                 The engine is cross-checked against seminr (validation/ on GitHub): every path agrees within 2e-7.", N_CORES)),
           tags$h4("Built-in smoke test"),
           tags$p("Reproduces the seed-2026 reference fixture for simple mediation with
                  explicit tolerance rules (power: 2.5 combined Monte Carlo standard
@@ -863,6 +926,7 @@ server <- function(input, output, session) {
          alpha = as.numeric(input$alpha), target = as.numeric(input$target),
          n_grid = grid, mc_reps = tier$mc, boot_reps = tier$boot,
          seed = input$seed, runtime = Sys.time(), cores = N_CORES,
+         progress_file = progress_file,
          tier = input$tier, engine = "built-in",
          plspower_version = PLSPOWER_VERSION,
          versions = c(list(R = R.version.string),
@@ -885,14 +949,38 @@ server <- function(input, output, session) {
   # Live status while a run is going (results arrive only at the end).
   run_started <- reactiveVal(NULL)
   observeEvent(input$run_analysis, run_started(Sys.time()), priority = 10)
+  progress_file <- tempfile("plspower_progress_", tmpdir = tempdir())
+  stage2_started <- reactiveVal(NULL)
+  observeEvent(input$run_analysis, { unlink(progress_file); stage2_started(NULL) }, priority = 20)
+  session$onSessionEnded(function() unlink(progress_file))
+
+  progress_bar <- function(frac, label) tags$div(style = "margin:8px 0 4px;",
+    tags$div(style = "height:14px;background:#dde5f2;border-radius:7px;overflow:hidden;",
+      tags$div(style = sprintf("height:100%%;width:%.1f%%;background:#4a69bd;transition:width .8s;", 100 * frac))),
+    tags$small(label))
   output$run_status <- renderUI({
     st <- power_task$status()
     if (st == "running") {
       invalidateLater(1000)
       el <- as.numeric(difftime(Sys.time(), run_started() %||% Sys.time(), units = "secs"))
+      s <- isolate(tryCatch(settings(), error = function(e) NULL))
+      done <- if (file.exists(progress_file)) file.size(progress_file) else 0
+      total <- if (!is.null(s)) (if (identical(s$mode, "find")) FINE_POINTS else length(s$n_grid)) * s$mc_reps else NA
+      bar <- if (is.na(total)) NULL
+        else if (done == 0 && identical(s$mode, "find"))
+          progress_bar(0, "Step 1 of 2: scanning the N range (fast)...")
+        else {
+          if (is.null(isolate(stage2_started()))) stage2_started(Sys.time())
+          frac <- min(1, done / total)
+          t2 <- as.numeric(difftime(Sys.time(), isolate(stage2_started()), units = "secs"))
+          eta <- if (frac > 0.03) sprintf(" - about %s left", fmt_duration(t2 * (1 - frac) / frac)) else ""
+          progress_bar(frac, sprintf("%s%s replications done (%d%%)%s",
+            if (identical(s$mode, "find")) "Step 2 of 2: " else "",
+            format(done, big.mark = ","), round(100 * frac), eta))
+        }
       tags$div(style = "margin-top:8px;padding:8px;border-radius:6px;background:#eef3fb;",
         tags$strong(sprintf("Running... %d:%02d elapsed.", floor(el / 60), round(el %% 60))),
-        tags$br(), isolate(output_runtime_text()),
+        bar, isolate(output_runtime_text()),
         tags$br(), tags$small("Keep this page open and your screen on. On phones, switching apps or",
                               "locking the screen can pause the page; results appear here when done."))
     } else if (st == "error") {
@@ -958,6 +1046,21 @@ server <- function(input, output, session) {
             N_CORES)
   })
   output$runtime_note <- renderText(output_runtime_text())
+
+  # "How long will it take?" - Find my N (scan 50-1,000) for the current model,
+  # with the needed N around 150, 300 or 600, for each tier.
+  output$time_guide <- renderTable({
+    m <- model(); if (inherits(m, "error")) return(NULL)
+    size <- sum(m$n_ind) / 9 * (nrow(m$S) / 3)
+    cost <- function(grid, mc, boot) sum(grid / 200) * mc * (1 + boot) *
+      FIT_MS_N200 / 1000 * size / min(N_CORES, length(grid))
+    scan <- cost(coarse_grid(50, 1000), COARSE_MC, 0)
+    cases <- c(150, 300, 600)
+    out <- data.frame(Tier = c("Quick (preview)", "Standard (report)", "Publication"))
+    for (nn in cases) out[[sprintf("N about %d", nn)]] <- vapply(TIERS, function(t)
+      fmt_duration(scan + cost(fine_grid(round(nn * 0.8), nn), t$mc, t$boot)), character(1))
+    out
+  }, striped = TRUE, spacing = "xs")
 
   output$elapsed_note <- renderText({
     r <- res(); req(r); sprintf("Finished in %s.", fmt_duration(r$elapsed_sec))
