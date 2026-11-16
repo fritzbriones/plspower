@@ -1,10 +1,10 @@
 # plspower — A Monte Carlo Simulation Planner for PLS-SEM Power Analysis
 
-**Status: v0.5.0 — engine cross-validated against `seminr` 2.6.0
-(estimates agree within 1e-7; power curves identical — see
+**Status: v0.6.0 — models with 1–3 mediators (parallel or serial) and
+construct-specific measurement; engine cross-validated against `seminr` 2.6.0
+for six model types (all paths agree within 2e-7; power identical — see
 [Validation](#validation-protocol-read-before-reporting-anything)).
-Built-in smoke test PASSED (R 4.3.3, Nov 16, 2026).** A research-planning
-tool under active development. Quick-preview results are never
+Built-in smoke test PASSED (Nov 16, 2026).** Quick-preview results are never
 publication-grade by design.
 
 **Created by Fritz Jeffry Briones.** If you use plspower, please
@@ -18,12 +18,14 @@ publication-grade by design.
 ## What it does
 
 `plspower` is a **prospective** power-analysis planner for PLS-SEM studies.
-You specify a mediation model (X → M → Y plus direct effect X → Y),
+You specify a mediation model — X → 1 to 3 mediators → Y (parallel or
+serial) plus the direct effect X → Y — with loadings and indicator counts
+per construct,
 measurement quality, and inference rule; the app runs a seed-controlled
 Monte Carlo simulation in the background and reports:
 
-- power for the **direct effect** c (X → Y) **or the indirect effect**
-  a × b (X → M → Y),
+- power for the **direct effect**, the **total indirect effect**, each
+  **specific indirect effect** (parallel) or the **serial indirect effect**,
 - the power curve over a sample-size grid (normal-theory / Sobel and
   percentile-bootstrap PLS-SEM inference),
 - the minimum N for your target power (80% or 90%),
@@ -76,6 +78,25 @@ shiny::runApp("app.R")
 Or deploy `app.R` as a single-file Shiny app to shinyapps.io
 (`rsconnect::deployApp(appDir = ".", appFiles = "app.R")`).
 
+## What's new in v0.6.0
+
+- **1–3 mediators**, **parallel** (X → each M → Y) or **serial**
+  (X → M1 → M2 → M3 → Y), always with the direct path X → Y.
+- **Different loading and number of indicators per construct** (or one
+  setting for all).
+- **Effects**: direct, total indirect, specific indirect via each mediator,
+  and serial indirect; tested with the delta-method z test (= Sobel for a
+  single a × b; verified against the empirical SD) and the percentile bootstrap.
+- Model check in the app: impossible path combinations (explained variance
+  ≥ 100%) are blocked with a clear message; R² of Y and the true indirect
+  effects are shown.
+- G*Power-equivalent comparison generalised to any of these models.
+- **Fix:** minimum-N interpolation returned the lower grid point when power
+  reached exactly 100% at the next point (present since v0.4.1).
+- Cross-check against seminr extended to six model types (simple, parallel
+  with 2–3 mediators, serial with 2–3 mediators; equal and unequal measurement).
+- Simple mediation gives bit-for-bit the same results as v0.5.0.
+
 ## What's new in v0.5.0
 
 - **About 10× faster engine**, numerically identical to v0.4.2 (max
@@ -106,9 +127,9 @@ Or deploy `app.R` as a single-file Shiny app to shinyapps.io
 
 ## Model scope (v1, deliberately narrow)
 
-- One mediation template: X → M → Y with direct effect X → Y
-- Three reflective (Mode A) constructs, 3–6 indicators each
-- Direct-effect (c) or indirect-effect (a × b) power; two-sided inference
+- X → 1–3 mediators (parallel or serial) → Y, with direct effect X → Y
+- Reflective (Mode A) constructs, 1–12 indicators each, loadings 0.30–0.97
+- Direct, total indirect, specific indirect or serial indirect power; two-sided inference
 - Normal-theory and percentile-bootstrap tests (bootstrap power is
   computed over valid bootstrap decisions only)
 - Single built-in Mode A engine (cross-validated against seminr) — no engine selection in-app
@@ -126,14 +147,14 @@ Or deploy `app.R` as a single-file Shiny app to shinyapps.io
 2. **Independent cross-validation against seminr**
    (`Rscript validation/cross_validate_seminr.R`): the built-in engine and
    `seminr::estimate_pls()` (Mode A, path weighting) fit the same simulated
-   datasets. Acceptance rules: path estimates within 1e-4 and power
-   (direct and indirect) within ±0.03 at every N.
-   **Status: PASSED (v0.5.0 vs seminr 2.6.0, Nov 16, 2026)** — 4,800
-   datasets over 16 conditions (loadings 0.70/0.85, 3/5 indicators,
-   N = 100–300): largest estimate difference 7.7e-8, largest power
-   difference 0.000. The v0.4.1 engine fails this check (difference 0.09),
-   which confirms the check detects real errors. Results are saved in
-   `validation/results/`.
+   datasets. Acceptance rules: every structural path within 1e-4 and power
+   for every effect within ±0.03 at every N.
+   **Status: PASSED (v0.6.0 vs seminr 2.6.0, Nov 16, 2026)** — 6 models
+   (simple; parallel with 2 and 3 mediators; serial with 2 and 3 mediators;
+   equal and unequal loadings/indicator counts) × N = 100, 200, 300 × 250
+   datasets: largest path difference 1.3e-7, largest power difference 0.000
+   across 51 effect-by-condition cells. The v0.4.1 engine fails the simple
+   check (difference 0.09). Results: `validation/results/`.
 3. **Publication settings**: 5,000–10,000 MC replications × 10,000
    bootstrap resamples, at least 3 seeds. Only results at this tier are
    citable.
@@ -145,7 +166,8 @@ so every run is reproducible.
 
 - The built-in engine agrees with seminr for this model; it has not been
   compared with cSEM or SmartPLS.
-- Equal loadings and indicator counts for all three constructs.
+- One X and one Y; up to three mediators; no moderators, formative or
+  higher-order constructs, or multi-group analysis.
 - One model family only (v1); no formative constructs, multi-group
   analysis, higher-order constructs, or custom path diagrams.
 - Percentile bootstrap only (BCa planned).
@@ -157,7 +179,9 @@ so every run is reproducible.
 - [x] `seminr` cross-validation via separate validation script
       (±0.03 agreement rule) — PASSED, v0.5.0
 - [x] Indirect-effect (a × b) power — v0.5.0
-- [ ] Construct-specific loadings and indicator counts
+- [x] Construct-specific loadings and indicator counts — v0.6.0
+- [x] 2–3 mediators, parallel or serial — v0.6.0
+- [ ] Moderation (interaction terms)
 - [ ] BCa bootstrap
 - [ ] Publication-tier fixture (5,000–10,000 MC × 10,000 boot, ≥3 seeds)
 - [ ] Condition sweep: loadings, indicator counts, path sizes,
@@ -181,7 +205,7 @@ MIT License. See LICENSE.
 If you use plspower in a thesis, article or report, please cite:
 
 > Briones, F. J. (2026). *plspower: A Monte Carlo simulation planner for
-> PLS-SEM power analysis* (Version 0.5.0) [Computer software]. GitHub.
+> PLS-SEM power analysis* (Version 0.6.0) [Computer software]. GitHub.
 > https://github.com/fritzbriones/plspower
 
 In-text: (Briones, 2026). GitHub's **"Cite this repository"** button
@@ -192,7 +216,7 @@ In-text: (Briones, 2026). GitHub's **"Cite this repository"** button
   author  = {Briones, Fritz Jeffry},
   title   = {plspower: A Monte Carlo simulation planner for PLS-SEM power analysis},
   year    = {2026},
-  version = {0.5.0},
+  version = {0.6.0},
   url     = {https://github.com/fritzbriones/plspower}
 }
 ```

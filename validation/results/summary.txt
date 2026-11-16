@@ -1,4 +1,5 @@
-plspower 0.5.0 vs seminr 2.6.0 - 2026-11-16 - standard run, 300 datasets per cell
-Check 1 (estimates, tolerance 0.0001): PASS - largest difference 7.67e-08
-Check 2 (power, tolerance +/-0.03): PASS - largest difference 0.000
-Overall: PASS (40 s)
+plspower 0.6.0 vs seminr 2.6.0 - 2026-11-16 - standard run: 6 models x 3 sample sizes x 250 datasets
+Models: simple_equal, simple_unequal, parallel2_unequal, parallel3_equal, serial2_unequal, serial3_equal
+Check 1 (all structural paths, tolerance 0.0001): PASS - largest difference 1.27e-07
+Check 2 (power for 51 effect-by-condition cells, tolerance +/-0.03): PASS - largest difference 0.000
+Overall: PASS (48 s)
