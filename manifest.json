@@ -1552,16 +1552,16 @@
   },
   "files": {
     "app.R": {
-      "checksum": "7cc32af6d96abb7d84fec4421a05731e"
+      "checksum": "f541028bc150f6e76f1e211fa9149bc5"
     },
     "DESCRIPTION": {
-      "checksum": "4874008ca642c83ad74f06b1ab0896ba"
+      "checksum": "e10b3cd16ca32e850268ed9e339faaf4"
     },
     "LICENSE": {
       "checksum": "7fb4163c3dc9ef4a84e346bb1c5de188"
     },
     "README.md": {
-      "checksum": "19fa0bde5ee2ce6c06c8dca48688663a"
+      "checksum": "7db25a4d9ed843c6af70321fb0485480"
     }
   },
   "users": null

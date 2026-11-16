@@ -79,6 +79,38 @@ shiny::runApp("app.R")
 Or deploy `app.R` as a single-file Shiny app to shinyapps.io
 (`rsconnect::deployApp(appDir = ".", appFiles = "app.R")`).
 
+## What's new in v0.7.0
+
+- **Title bar** at the top of the app: *plspower — Sample-size and power
+  planner for PLS-SEM*, version and author.
+- **Progress bar** during a run: replications done, percent and time left
+  (Find my N shows step 1 "scanning" and step 2 with the bar).
+- **"How long will it take?"** guide in the app: Quick / Standard /
+  Publication times for *your* model on *this* server, for a needed N of
+  about 150, 300 and 600.
+- **Publication tier 5× faster**: 5,000 Monte Carlo replications × 2,000
+  bootstrap resamples (was 10,000; 2,000 resamples is ample for a
+  significance decision at α = .05 or .01).
+- **All formulas shown as rendered math** in the Methods & Validation tab
+  (data generation, PLS-SEM estimation, tests, power, minimum N, G*Power
+  and inverse square-root comparisons).
+
+### How long will it take?
+
+Typical **Find my N** run (scan 50–1,000), simple mediation with 3
+indicators per construct, measured on a 2-core server. Your model and server
+change these numbers — the app shows the estimate for your settings before
+you run.
+
+| Tier | N about 150 | N about 300 | N about 600 |
+|---|---|---|---|
+| Quick (preview) | ~2 min | ~3 min | ~6 min |
+| Standard (report) | ~2.5 h | ~5 h | ~10 h |
+| Publication | ~12 h | ~1 day | ~2 days |
+
+Explore with Quick on any device; run Standard or Publication on a computer
+and keep the page open until it finishes.
+
 ## What's new in v0.6.1 (mobile and usability fixes)
 
 - **Live status while a run is going**: elapsed time, the estimate, and a
@@ -226,7 +258,7 @@ MIT License. See LICENSE.
 If you use plspower in a thesis, article or report, please cite:
 
 > Briones, F. J. (2026). *plspower: A Monte Carlo simulation planner for
-> PLS-SEM power analysis* (Version 0.6.1) [Computer software]. GitHub.
+> PLS-SEM power analysis* (Version 0.7.0) [Computer software]. GitHub.
 > https://github.com/fritzbriones/plspower
 
 In-text: (Briones, 2026). GitHub's **"Cite this repository"** button
@@ -237,7 +269,7 @@ In-text: (Briones, 2026). GitHub's **"Cite this repository"** button
   author  = {Briones, Fritz Jeffry},
   title   = {plspower: A Monte Carlo simulation planner for PLS-SEM power analysis},
   year    = {2026},
-  version = {0.6.1},
+  version = {0.7.0},
   url     = {https://github.com/fritzbriones/plspower}
 }
 ```
