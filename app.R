@@ -1,6 +1,6 @@
-# plspower - single-file deployable v0.6.0 (concatenated from modular project)
+# plspower - single-file deployable v0.6.1 (concatenated from modular project)
 # Author: Fritz Jeffry Briones - https://github.com/fritzbriones/plspower
-# Cite: Briones, F. J. (2026). plspower (Version 0.6.0) [Computer software].
+# Cite: Briones, F. J. (2026). plspower (Version 0.6.1) [Computer software].
 # Deploy: paste into shinyapps.io as app.R, or run with shiny::runApp()
 # Requires: shiny, bslib, ggplot2, future, promises, jsonlite
 
@@ -219,9 +219,14 @@ power_at_n <- function(n, p, mc_reps, boot_reps, alpha) {
 }
 
 # Number of CPU cores used for a run (forking is not available on Windows).
+# v0.6.1: parallelly::availableCores() respects container CPU limits (cgroups);
+# detectCores() reports the host machine's cores, which on cloud hosting can
+# be far more than the app may use - runs were then much slower than estimated.
 plspower_cores <- function() {
   if (.Platform$OS.type == "windows") return(1L)
-  max(1L, min(4L, parallel::detectCores(logical = FALSE), na.rm = TRUE))
+  n <- if (requireNamespace("parallelly", quietly = TRUE))
+         parallelly::availableCores(omit = 0) else parallel::detectCores(logical = FALSE)
+  max(1L, min(4L, as.integer(n), na.rm = TRUE))
 }
 
 # Power curve over the N grid. v0.5.0: each grid point gets its own
@@ -415,7 +420,7 @@ library(jsonlite)
 
 if (!exists("%||%", baseenv())) `%||%` <- function(x, y) if (is.null(x)) y else x
 
-PLSPOWER_VERSION <- "0.6.0"
+PLSPOWER_VERSION <- "0.6.1"
 APP_VERSION <- paste("plspower", PLSPOWER_VERSION)
 AUTHOR <- "Fritz Jeffry Briones"
 REPO_URL <- "https://github.com/fritzbriones/plspower"
@@ -466,7 +471,7 @@ N_CORES <- plspower_cores()
 future::plan(future::multisession, workers = 2)
 
 TIERS <- list(
-  quick        = list(mc = 200,  boot = 500,   label = "Quick preview (200 MC x 500 boot)"),
+  quick        = list(mc = 200,  boot = 100,   label = "Quick preview (200 MC x 100 boot)"),
   standard     = list(mc = 1000, boot = 2000,  label = "Standard (1,000 MC x 2,000 boot)"),
   publication  = list(mc = 5000, boot = 10000, label = "Publication (5,000 MC x 10,000 boot)")
 )
@@ -705,6 +710,7 @@ ui <- bslib::page_fillable(
         card(card_header("Run"),
              card_body(actionButton("run_analysis", "Run power analysis",
                                     class = "btn-primary"),
+                       uiOutput("run_status"),
                        textOutput("elapsed_note"))),
         uiOutput("required_n_card"),
         plotOutput("power_curve"),
@@ -715,13 +721,10 @@ ui <- bslib::page_fillable(
                tags$p(class = "text-muted",
                       "A ready-to-paste sample-size justification. Check it against your study before use."),
                verbatimTextOutput("methods_text"),
-               downloadButton("dl_methods", "Methods text (TXT)")
+               uiOutput("dl_methods_ui")
              )),
         card(card_header("5. Export"),
-             card_body(
-               downloadButton("dl_csv", "Power curve (CSV)"),
-               downloadButton("dl_json", "Full run (JSON - seed, settings, package versions, citation)")
-             )),
+             card_body(uiOutput("export_ui"))),
         cite_card()
       ),
       nav_panel("Methods & Validation",
@@ -762,6 +765,7 @@ ui <- bslib::page_fillable(
                  errors; f2: 1e-10; inverse-sqrt: exact). SMOKE TEST: verifies
                  implementation agreement, not publication-grade precision."),
           actionButton("self_test", "Run engine smoke test"),
+          uiOutput("self_status"),
           tableOutput("self_test_table"),
           textOutput("self_test_verdict"),
           tags$h4("Known limitations"),
@@ -782,6 +786,10 @@ ui <- bslib::page_fillable(
 )
 
 server <- function(input, output, session) {
+  # Let phones reconnect to the same session after a short disconnect
+  # (switching apps, screen lock), so a running analysis is not lost.
+  session$allowReconnect(TRUE)
+
   k <- reactive(as.integer(input$k %||% 1))
   structure <- reactive(if (k() > 1) input$structure %||% "parallel" else "parallel")
   val <- function(id, default) { v <- isolate(input[[id]]); if (is.null(v)) default else v }
@@ -874,6 +882,48 @@ server <- function(input, output, session) {
 
   res <- power_task$result
 
+  # Live status while a run is going (results arrive only at the end).
+  run_started <- reactiveVal(NULL)
+  observeEvent(input$run_analysis, run_started(Sys.time()), priority = 10)
+  output$run_status <- renderUI({
+    st <- power_task$status()
+    if (st == "running") {
+      invalidateLater(1000)
+      el <- as.numeric(difftime(Sys.time(), run_started() %||% Sys.time(), units = "secs"))
+      tags$div(style = "margin-top:8px;padding:8px;border-radius:6px;background:#eef3fb;",
+        tags$strong(sprintf("Running... %d:%02d elapsed.", floor(el / 60), round(el %% 60))),
+        tags$br(), isolate(output_runtime_text()),
+        tags$br(), tags$small("Keep this page open and your screen on. On phones, switching apps or",
+                              "locking the screen can pause the page; results appear here when done."))
+    } else if (st == "error") {
+      msg <- tryCatch({ power_task$result(); "" }, error = function(e) conditionMessage(e))
+      tags$p(style = "color:#c0392b;font-weight:600;margin-top:8px;", "The run stopped with an error: ", msg)
+    }
+  })
+  output$self_status <- renderUI({
+    st <- self_task$status()
+    if (st == "running") tags$p(style = "margin-top:6px;", tags$strong("Smoke test running... usually 15-60 seconds. Keep this page open."))
+    else if (st == "error") tags$p(style = "color:#c0392b;", "Smoke test error: ",
+      tryCatch({ self_task$result(); "" }, error = function(e) conditionMessage(e)))
+  })
+
+  # Downloads appear only once there is a result (tapping them earlier gave an error).
+  output$dl_methods_ui <- renderUI({
+    if (power_task$status() != "success") return(tags$p(class = "text-muted", "Run the analysis to get the methods text."))
+    downloadButton("dl_methods", "Download methods text (TXT)")
+  })
+  output$export_ui <- renderUI({
+    if (power_task$status() != "success") return(tags$p(class = "text-muted", "Run the analysis to enable downloads."))
+    tagList(
+      downloadButton("dl_csv", "Power curve (CSV)"),
+      tags$p(class = "text-muted", style = "font-size:0.85em;margin-top:6px;",
+             "CSV: the power values for each N, for Excel or your own charts."),
+      downloadButton("dl_json", "Full run record (JSON)"),
+      tags$p(class = "text-muted", style = "font-size:0.85em;margin-top:6px;",
+             "JSON: an exact record of the model, settings, random seed, software versions and results,",
+             "so anyone can reproduce your analysis. Keep it with your data or add it to supplementary materials."))
+  })
+
   output$tier_note <- renderText(paste("Tier:", TIERS[[input$tier]]$label))
   output$tier_banner <- renderUI({
     if (input$tier == "quick")
@@ -884,7 +934,7 @@ server <- function(input, output, session) {
 
   # Runtime estimate shown BEFORE the run: N grid x MC reps x (1 + bootstrap)
   # PLS fits, fit time measured on this server and scaled by model size.
-  output$runtime_note <- renderText({
+  output_runtime_text <- reactive({
     m <- model(); if (inherits(m, "error")) return("")
     tier <- TIERS[[input$tier]]
     size <- sum(m$n_ind) / 9 * (nrow(m$S) / 3)
@@ -907,6 +957,7 @@ server <- function(input, output, session) {
             format(round(length(grid) * tier$mc * (1 + tier$boot)), big.mark = ","),
             N_CORES)
   })
+  output$runtime_note <- renderText(output_runtime_text())
 
   output$elapsed_note <- renderText({
     r <- res(); req(r); sprintf("Finished in %s.", fmt_duration(r$elapsed_sec))
