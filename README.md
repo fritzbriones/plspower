@@ -79,6 +79,18 @@ shiny::runApp("app.R")
 Or deploy `app.R` as a single-file Shiny app to shinyapps.io
 (`rsconnect::deployApp(appDir = ".", appFiles = "app.R")`).
 
+## What's new in v0.8.0 (exact values and c limit)
+
+- **Type exact values:** a new tick box under "Standardized paths" swaps the
+  sliders for number boxes with 0.01 steps (for example a = 0.13, c = 0.12),
+  with the same ranges: paths 0 to 0.70, c 0 to 0.50, loading 0.50 to 0.95.
+  Typed values outside the range are rejected with a message.
+- **Limit for c shown live:** when the paths into Y are large, the model note
+  says how high the direct effect c can go (for example "With these paths,
+  c can be at most 0.37"), including when a setting is blocked.
+- Per-construct loadings now take 0.01 steps.
+- The engine is unchanged, so earlier results and the smoke test still apply.
+
 ## What's new in v0.7.1 (phone display fixes)
 
 - Formulas split into shorter lines and scrollable, so nothing is cut off
@@ -273,7 +285,7 @@ MIT License. See LICENSE.
 If you use plspower in a thesis, article or report, please cite:
 
 > Briones, F. J. (2026). *plspower: A Monte Carlo simulation planner for
-> PLS-SEM power analysis* (Version 0.7.1) [Computer software]. GitHub.
+> PLS-SEM power analysis* (Version 0.8.0) [Computer software]. GitHub.
 > https://github.com/fritzbriones/plspower
 
 In-text: (Briones, 2026). GitHub's **"Cite this repository"** button
@@ -284,7 +296,7 @@ In-text: (Briones, 2026). GitHub's **"Cite this repository"** button
   author  = {Briones, Fritz Jeffry},
   title   = {plspower: A Monte Carlo simulation planner for PLS-SEM power analysis},
   year    = {2026},
-  version = {0.7.1},
+  version = {0.8.0},
   url     = {https://github.com/fritzbriones/plspower}
 }
 ```

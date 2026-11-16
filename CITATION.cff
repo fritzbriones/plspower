@@ -5,8 +5,8 @@ type: software
 authors:
   - family-names: Briones
     given-names: Fritz Jeffry
-version: 0.7.1
-date-released: 2026-11-16
+version: 0.8.0
+date-released: 2026-11-17
 license: MIT
 repository-code: "https://github.com/fritzbriones/plspower"
 keywords:

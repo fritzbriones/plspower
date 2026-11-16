@@ -1,6 +1,6 @@
-# plspower - single-file deployable v0.7.1 (concatenated from modular project)
+# plspower - single-file deployable v0.8.0 (concatenated from modular project)
 # Author: Fritz Jeffry Briones - https://github.com/fritzbriones/plspower
-# Cite: Briones, F. J. (2026). plspower (Version 0.7.1) [Computer software].
+# Cite: Briones, F. J. (2026). plspower (Version 0.8.0) [Computer software].
 # Deploy: paste into shinyapps.io as app.R, or run with shiny::runApp()
 # Requires: shiny, bslib, ggplot2, future, promises, jsonlite
 
@@ -431,7 +431,7 @@ library(jsonlite)
 
 if (!exists("%||%", baseenv())) `%||%` <- function(x, y) if (is.null(x)) y else x
 
-PLSPOWER_VERSION <- "0.7.1"
+PLSPOWER_VERSION <- "0.8.0"
 APP_VERSION <- paste("plspower", PLSPOWER_VERSION)
 AUTHOR <- "Fritz Jeffry Briones"
 REPO_URL <- "https://github.com/fritzbriones/plspower"
@@ -508,11 +508,23 @@ model_from <- function(s) {
   ind <- if (isTRUE(s$same_meas)) s$n_ind  else unlist(s$n_ind_each)[seq_len(q)]
   if (anyNA(lam) || any(lam < 0.3 | lam > 0.97)) stop("Loadings must be between 0.30 and 0.97.")
   if (anyNA(ind) || any(ind < 1 | ind > 12)) stop("Indicator counts must be between 1 and 12.")
+  pa <- c(s$a, s$b, s$d)
+  if (anyNA(pa) || any(pa < 0 | pa > 0.70)) stop("Paths a, b and d must be between 0 and 0.70.")
+  if (is.null(s$c) || is.na(s$c) || s$c < 0 || s$c > 0.50) stop("Direct effect c must be between 0 and 0.50.")
   if (identical(s$structure, "serial") && s$k > 1)
     build_model(s$k, "serial", a = s$a[1], b = s$b[1], c = s$c, d = s$d[seq_len(s$k - 1)],
                 lambda = lam, n_ind = ind)
   else build_model(s$k, "parallel", a = s$a[seq_len(s$k)], b = s$b[seq_len(s$k)], c = s$c,
                    lambda = lam, n_ind = ind)
+}
+
+# Largest direct effect c (0.01 steps, up to 0.50) that keeps the model valid
+# with the other settings fixed; NA if no c works (other paths too large).
+max_c <- function(s) {
+  for (cc in seq(0.50, 0, by = -0.01))
+    if (!inherits(tryCatch(model_from(modifyList(s, list(c = cc))), error = function(e) e), "error"))
+      return(cc)
+  NA_real_
 }
 
 # ---- Find my N: two-stage search ------------------------------------------
@@ -701,13 +713,11 @@ ui <- bslib::page_fillable(
                        c("Parallel (X -> each M -> Y)" = "parallel",
                          "Serial (X -> M1 -> M2 ... -> Y)" = "serial"))),
         tags$h6("Standardized paths"),
+        checkboxInput("exact", "Type exact values (0.01 steps) instead of sliders", FALSE),
         uiOutput("path_inputs"),
-        sliderInput("c", "Direct effect c (X -> Y)", 0.00, 0.50, 0.20, 0.05),
         tags$h6("Measurement"),
         checkboxInput("same_meas", "Same loading and number of indicators for all constructs", TRUE),
-        conditionalPanel("input.same_meas",
-          sliderInput("lambda", "Indicator loading", 0.50, 0.95, 0.80, 0.05),
-          sliderInput("n_ind", "Indicators per construct", 2, 8, 3, 1)),
+        conditionalPanel("input.same_meas", uiOutput("same_meas_inputs")),
         conditionalPanel("!input.same_meas", uiOutput("meas_inputs")),
         uiOutput("model_note"),
         uiOutput("effect_select"),
@@ -866,25 +876,39 @@ server <- function(input, output, session) {
   structure <- reactive(if (k() > 1) input$structure %||% "parallel" else "parallel")
   val <- function(id, default) { v <- isolate(input[[id]]); if (is.null(v)) default else v }
 
-  # Path sliders for the chosen model (previous values are kept on redraw).
+  # A slider (0.05 steps) or, with "Type exact values", a number box (0.01
+  # steps) with the same range. Previous values are kept on redraw.
+  num_in <- function(id, label, lo, hi, def, step = 0.05) {
+    v <- val(id, def)
+    if (isTRUE(input$exact))
+      numericInput(id, sprintf("%s [%s to %s]", label, lo, hi), v, min = lo, max = hi, step = 0.01)
+    else sliderInput(id, label, lo, hi, v, step)
+  }
+
+  # Path inputs for the chosen model, then the direct effect c.
   output$path_inputs <- renderUI({
     kk <- k(); st <- structure()
-    sl <- function(id, label, def) sliderInput(id, label, 0.00, 0.70, val(id, def), 0.05)
-    if (kk == 1) return(tagList(sl("a1", "a (X -> M1)", 0.40), sl("b1", "b (M1 -> Y)", 0.30)))
+    sl <- function(id, label, def) num_in(id, label, 0.00, 0.70, def)
+    cc <- num_in("c", "Direct effect c (X -> Y)", 0.00, 0.50, 0.20)
+    if (kk == 1) return(tagList(sl("a1", "a (X -> M1)", 0.40), sl("b1", "b (M1 -> Y)", 0.30), cc))
     if (st == "parallel") return(tagList(
       lapply(seq_len(kk), function(j) sl(paste0("a", j), sprintf("a%d (X -> M%d)", j, j), 0.40 - 0.1 * (j - 1))),
-      lapply(seq_len(kk), function(j) sl(paste0("b", j), sprintf("b%d (M%d -> Y)", j, j), 0.30))))
+      lapply(seq_len(kk), function(j) sl(paste0("b", j), sprintf("b%d (M%d -> Y)", j, j), 0.30)), cc))
     tagList(sl("a1", "a (X -> M1)", 0.40),
             lapply(seq_len(kk - 1), function(j) sl(paste0("d", j), sprintf("d%d (M%d -> M%d)", j, j, j + 1), 0.35)),
-            sl("b1", sprintf("b (M%d -> Y)", kk), 0.30))
+            sl("b1", sprintf("b (M%d -> Y)", kk), 0.30), cc)
   })
+
+  output$same_meas_inputs <- renderUI(tagList(
+    num_in("lambda", "Indicator loading", 0.50, 0.95, 0.80),
+    sliderInput("n_ind", "Indicators per construct", 2, 8, val("n_ind", 3), 1)))
 
   # Per-construct loadings and indicator counts.
   output$meas_inputs <- renderUI({
     nm <- c("X", paste0("M", seq_len(k())), "Y")
     tagList(lapply(nm, function(v) tags$div(style = "display:flex;gap:8px;",
       numericInput(paste0("lam_", v), paste(v, "loading"), val(paste0("lam_", v), 0.80),
-                   min = 0.3, max = 0.97, step = 0.05),
+                   min = 0.3, max = 0.97, step = 0.01),
       numericInput(paste0("ind_", v), paste(v, "indicators"), val(paste0("ind_", v), 3),
                    min = 1, max = 12, step = 1))))
   })
@@ -894,15 +918,22 @@ server <- function(input, output, session) {
     getv <- function(ids, def) vapply(ids, function(id) { v <- input[[id]]; if (is.null(v)) def else as.numeric(v) }, numeric(1))
     list(k = kk, structure = structure(),
          a = getv(paste0("a", 1:3), 0.4), b = getv(paste0("b", 1:3), 0.3),
-         d = getv(paste0("d", 1:2), 0.35), c = input$c %||% 0.2,
+         d = getv(paste0("d", 1:2), 0.35), c = as.numeric(input$c %||% 0.2),
          same_meas = isTRUE(input$same_meas), lambda = input$lambda %||% 0.8, n_ind = input$n_ind %||% 3,
          lambda_each = getv(paste0("lam_", nm), 0.8), n_ind_each = getv(paste0("ind_", nm), 3))
   })
   model <- reactive(tryCatch(model_from(model_inputs()), error = function(e) e))
 
   output$model_note <- renderUI({
-    m <- model()
-    if (inherits(m, "error")) return(tags$p(style = "color:#c0392b;font-weight:600;", conditionMessage(m)))
+    m <- model(); s <- model_inputs()
+    # Hint on the largest allowed c: shown when the model is fine or blocked
+    # only by Y's variance, not for input-range errors.
+    bad <- inherits(m, "error")
+    mc <- if (!bad || grepl("variance", conditionMessage(m))) max_c(s) else NULL
+    c_hint <- if (is.null(mc) || (!is.na(mc) && mc >= 0.50)) NULL
+      else if (is.na(mc)) " Even with c = 0 this is not possible: lower a, b or d."
+      else sprintf(" With these paths, c can be at most %.2f.", mc)
+    if (bad) return(tags$p(style = "color:#c0392b;font-weight:600;", paste0(conditionMessage(m), c_hint)))
     q <- nrow(m$S); P <- which(m$S[q, ])
     r2y <- drop(t(m$Sigma[P, q]) %*% solve(m$Sigma[P, P, drop = FALSE], m$Sigma[P, q]))
     eff <- m$true_effects[names(m$true_effects) != "direct"]
@@ -911,7 +942,8 @@ server <- function(input, output, session) {
     tags$p(class = "text-muted", style = "font-size:0.85em;",
            sprintf("Model OK. R-squared of Y = %.2f. True indirect effect%s: %s.", r2y,
                    if (length(eff) > 1) "s" else "",
-                   paste(sprintf("%s = %.3f", names(eff), eff), collapse = ", ")))
+                   paste(sprintf("%s = %.3f", names(eff), eff), collapse = ", ")),
+           c_hint)
   })
 
   output$effect_select <- renderUI({
