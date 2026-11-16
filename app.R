@@ -329,6 +329,13 @@ parse_grid <- function(txt) {
   seq(rng[1], rng[2], by = rng[3])
 }
 
+check_range <- function(lo, hi) {
+  if (!is.numeric(lo) || !is.numeric(hi) || is.na(lo) || is.na(hi) ||
+      lo < 20 || hi <= lo || hi > 5000)
+    stop("Find my N: minimum N must be at least 20 and below the maximum N (maximum 5,000)")
+  invisible(TRUE)
+}
+
 fmt_duration <- function(secs) {
   if (secs < 90) return(sprintf("%d seconds", max(1, round(secs))))
   if (secs < 5400) return(sprintf("%d minutes", round(secs / 60)))
@@ -359,6 +366,19 @@ TIERS <- list(
 EFFECT_LABEL <- c(direct = "direct effect c (X -> Y)",
                   indirect = "indirect effect a x b (X -> M -> Y)")
 
+# ---- Find my N: two-stage search ------------------------------------------
+# Stage 1 scans a wide N range on a log-spaced grid with fast normal-theory
+# tests (Sobel for a x b) and 200 replications. Stage 2 runs the full tier
+# (bootstrap included) on a fine grid around the N where stage-1 power first
+# reached the target.
+COARSE_POINTS <- 8
+COARSE_MC <- 200
+FINE_POINTS <- 5
+coarse_grid <- function(lo, hi)
+  unique(round(exp(seq(log(lo), log(hi), length.out = COARSE_POINTS))))
+fine_grid <- function(lower, upper)
+  unique(round(seq(max(20, lower), upper * 1.1, length.out = FINE_POINTS)))
+
 run_power_simulation <- function(settings) {
   p <- list(a = settings$a, b = settings$b, c = settings$c,
             lambda = settings$lambda, n_ind = settings$n_ind)
@@ -366,9 +386,32 @@ run_power_simulation <- function(settings) {
     stop("Only the built-in engine is currently integrated and supported.")
   }
   t0 <- Sys.time()
-  curve <- power_curve(p, settings$n_grid, settings$mc_reps,
-                       settings$boot_reps, settings$alpha, settings$seed,
-                       cores = settings$cores)
+  coarse <- NULL; search_note <- NULL
+  if (identical(settings$mode, "find")) {
+    cg <- coarse_grid(settings$n_min, settings$n_max)
+    coarse <- power_curve(p, cg, COARSE_MC, 0, settings$alpha, settings$seed,
+                          cores = settings$cores)
+    pw <- if (identical(settings$effect, "indirect")) coarse$power_ind_sobel else coarse$power_nt
+    i <- which(pw >= settings$target)[1]
+    if (is.na(i)) {
+      settings$n_grid <- cg
+      search_note <- sprintf(paste0("Target power was not reached anywhere up to N = %d ",
+        "(highest stage-1 power %.2f). Increase the maximum N or check the effect sizes."),
+        settings$n_max, max(pw, na.rm = TRUE))
+      curve <- coarse
+    } else {
+      lower <- if (i == 1) max(20, round(cg[1] / 2)) else cg[i - 1]
+      settings$n_grid <- fine_grid(lower, cg[i])
+      if (i == 1) search_note <- sprintf(paste0("Power already reached the target at the ",
+        "minimum N (%d); the fine grid starts lower. Lower the minimum N to scan further down."), cg[1])
+      curve <- power_curve(p, settings$n_grid, settings$mc_reps, settings$boot_reps,
+                           settings$alpha, settings$seed + 1L, cores = settings$cores)
+    }
+  } else {
+    curve <- power_curve(p, settings$n_grid, settings$mc_reps,
+                         settings$boot_reps, settings$alpha, settings$seed,
+                         cores = settings$cores)
+  }
   gp <- gpower_required_n(p$a, p$b, p$c, settings$alpha, settings$target)
   isq <- inverse_sqrt_n(p$c, settings$alpha, settings$target)
   g <- settings$n_grid; tg <- settings$target
@@ -382,7 +425,8 @@ run_power_simulation <- function(settings) {
     runtime = settings$runtime,
     elapsed_sec = as.numeric(difftime(Sys.time(), t0, units = "secs")),
     version = APP_VERSION, engine = settings$engine,
-    citation = CITATION_APA
+    citation = CITATION_APA,
+    coarse = coarse, search_note = search_note
   )
 }
 
@@ -397,6 +441,8 @@ methods_text <- function(r) {
            else      { if (boot) r$min_n_boot     else r$min_n_nt }
   pw <- if (ind) { if (boot) r$curve$power_ind_boot else r$curve$power_ind_sobel }
         else      { if (boot) r$curve$power_boot     else r$curve$power_nt }
+  if (all(is.na(pw)))   # e.g. Find my N stopped after the scan (no bootstrap run)
+    pw <- if (ind) r$curve$power_ind_sobel else r$curve$power_nt
   test <- if (boot) sprintf(paste0("the two-sided %d%% percentile bootstrap confidence ",
                                    "interval (%s resamples) excluded zero"),
                             round(100 * (1 - s$alpha)), format(s$boot_reps, big.mark = ","))
@@ -417,6 +463,15 @@ methods_text <- function(r) {
     sub("^0", "", num(s$alpha)), ". Sample sizes from N = ", min(grid), " to N = ",
     max(grid), " in steps of ", if (length(grid) > 1) diff(grid)[1] else 0,
     " were evaluated (random seed ", s$seed, "). ")
+  if (!is.null(r$coarse) && identical(r$curve, r$coarse)) out <- paste0(out, sprintf(
+    "These sample sizes come from a log-spaced scan of N = %d to %d (%d replications, %s); no bootstrap stage was run because the target was not reached. ",
+    s$n_min, s$n_max, COARSE_MC, if (ind) "Sobel test" else "normal-theory t test"))
+  else if (!is.null(r$coarse)) out <- paste0(out, sprintf(paste0(
+    "These sample sizes were selected by a two-stage search: a log-spaced scan ",
+    "of N = %d to %d (%d replications, %s) located the region where power reached ",
+    "the target, and the full analysis was then run on a fine grid in that region. "),
+    s$n_min, s$n_max, COARSE_MC,
+    if (ind) "Sobel test" else "normal-theory t test"))
   out <- paste0(out, if (!is.na(min_n))
     sprintf("A sample of approximately N = %d was required to reach %d%% power (interpolated from the simulated power curve). ",
             min_n, round(100 * s$target))
@@ -480,7 +535,17 @@ ui <- bslib::page_fillable(
         textOutput("tier_note"),
         uiOutput("tier_banner"),
         numericInput("seed", "Random seed", 2026),
-        textInput("n_grid_text", "N grid (from,to,by)", "100,300,50"),
+        radioButtons("mode", "Sample sizes",
+                     choices = c("Find my N (automatic search)" = "find",
+                                 "Custom N grid" = "grid")),
+        conditionalPanel("input.mode == 'find'",
+          tags$div(style = "display:flex;gap:8px;",
+            numericInput("n_min", "Minimum N", 50, min = 20, step = 10),
+            numericInput("n_max", "Maximum N", 1000, min = 30, step = 50)),
+          tags$p(class = "text-muted", style = "font-size:0.85em;",
+                 "Scans this range quickly, then runs the full analysis only where power reaches your target.")),
+        conditionalPanel("input.mode == 'grid'",
+          textInput("n_grid_text", "N grid (from,to,by)", "100,300,50")),
         textOutput("runtime_note")
       )
     ),
@@ -575,12 +640,16 @@ ui <- bslib::page_fillable(
 
 server <- function(input, output, session) {
   settings <- eventReactive(input$run_analysis, {
-    grid <- tryCatch(parse_grid(input$n_grid_text), error = function(e) {
-      showNotification(conditionMessage(e), type = "error"); NULL })
+    grid <- tryCatch(
+      if (identical(input$mode, "find")) { check_range(input$n_min, input$n_max)
+                                           coarse_grid(input$n_min, input$n_max) }
+      else parse_grid(input$n_grid_text),
+      error = function(e) { showNotification(conditionMessage(e), type = "error"); NULL })
     req(grid)
     tier <- TIERS[[input$tier]]
     list(a = input$a, b = input$b, c = input$c, lambda = input$lambda,
          n_ind = input$n_ind, effect = input$effect,
+         mode = input$mode, n_min = input$n_min, n_max = input$n_max,
          alpha = as.numeric(input$alpha), target = as.numeric(input$target),
          n_grid = grid, mc_reps = tier$mc, boot_reps = tier$boot,
          seed = input$seed, runtime = Sys.time(), cores = N_CORES,
@@ -614,15 +683,24 @@ server <- function(input, output, session) {
   # Runtime estimate shown BEFORE the run: N grid x MC reps x (1 + bootstrap)
   # PLS fits, fit time measured on this server, grid points split over cores.
   output$runtime_note <- renderText({
+    tier <- TIERS[[input$tier]]
+    cost <- function(grid, mc, boot) sum(grid / 200) * mc * (1 + boot) *
+      FIT_MS_N200 / 1000 * (input$n_ind / 3) / min(N_CORES, length(grid))
+    if (identical(input$mode, "find")) {
+      ok <- tryCatch({ check_range(input$n_min, input$n_max); TRUE }, error = function(e) FALSE)
+      if (!ok) return("Enter a minimum N of at least 20 and a maximum N above it (up to 5,000).")
+      cg <- coarse_grid(input$n_min, input$n_max)
+      s1 <- cost(cg, COARSE_MC, 0)
+      lo <- cost(fine_grid(cg[1], cg[2]), tier$mc, tier$boot)
+      hi <- cost(fine_grid(cg[length(cg) - 1], cg[length(cg)]), tier$mc, tier$boot)
+      return(sprintf("Estimated runtime: ~%s to ~%s, depending on where N lands (%d core(s)).",
+                     fmt_duration(s1 + lo), fmt_duration(s1 + hi), N_CORES))
+    }
     grid <- tryCatch(parse_grid(input$n_grid_text), error = function(e) NULL)
     if (is.null(grid)) return("N grid: enter from,to,by (e.g. 100,300,50)")
-    tier <- TIERS[[input$tier]]
-    fits_per_rep <- 1 + tier$boot
-    secs <- sum(grid / 200) * tier$mc * fits_per_rep * FIT_MS_N200 / 1000 *
-      (input$n_ind / 3) / min(N_CORES, length(grid))
     sprintf("Estimated runtime: ~%s (%s PLS fits, %d core(s))",
-            fmt_duration(secs),
-            format(round(length(grid) * tier$mc * fits_per_rep), big.mark = ","),
+            fmt_duration(cost(grid, tier$mc, tier$boot)),
+            format(round(length(grid) * tier$mc * (1 + tier$boot)), big.mark = ","),
             N_CORES)
   })
 
@@ -653,7 +731,13 @@ Inverse square-root rule:  %d
 Planning-method discrepancy (bootstrap vs G*Power): %s",
         fmt_n(r$min_n_boot), fmt_n(r$min_n_nt), fmt_n(gp), r$inverse_sqrt, dif)
     }
-    card(card_header(hdr), card_body(tags$pre(body)))
+    extra <- list()
+    if (!is.null(r$coarse)) extra <- c(extra, list(tags$p(class = "text-muted", sprintf(
+      "Find my N: scanned N = %s; full analysis at N = %s.",
+      paste(r$coarse$N, collapse = ", "), paste(r$settings$n_grid, collapse = ", ")))))
+    if (!is.null(r$search_note)) extra <- c(extra, list(tags$p(
+      style = "color:#c0392b;font-weight:600;", r$search_note)))
+    card(card_header(hdr), card_body(tags$pre(body), extra))
   })
 
   output$power_curve <- renderPlot({
@@ -669,12 +753,17 @@ Planning-method discrepancy (bootstrap vs G*Power): %s",
       geom_line(color = "#4a69bd") + geom_point(color = "#4a69bd") +
       geom_line(aes(y = p_boot), color = "#e58e26", linetype = "dashed", na.rm = TRUE) +
       geom_hline(yintercept = tgt, color = "#c0392b", linetype = "dashed") +
+      { if (!is.null(r$coarse) && !identical(r$curve, r$coarse))
+          geom_point(data = transform(r$coarse,
+                       p_nt = if (ind) power_ind_sobel else power_nt),
+                     aes(N, p_nt), colour = "grey55", shape = 1, size = 2.5) } +
       scale_y_continuous(limits = c(0, 1)) +
       labs(y = "Power", x = "Sample size (N)",
            title = paste("Monte Carlo power curve -", EFFECT_LABEL[[r$settings$effect]]),
            subtitle = if (ind) "Blue: Sobel test; orange dashed: percentile bootstrap of a x b"
                       else "Blue: normal-theory t test; orange dashed: percentile bootstrap",
-           caption = paste(APP_VERSION, "- cite: Briones (2026)")) +
+           caption = paste0(if (!is.null(r$coarse)) "Grey circles: Find-my-N scan (200 replications, no bootstrap).  " else "",
+                            APP_VERSION, " - cite: Briones (2026)")) +
       theme_minimal()
   })
 

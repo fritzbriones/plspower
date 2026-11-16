@@ -81,6 +81,11 @@ Or deploy `app.R` as a single-file Shiny app to shinyapps.io
 - **About 10× faster engine**, numerically identical to v0.4.2 (max
   difference ~1e-15). Grid points run in parallel; the default Quick tier
   now takes minutes instead of hours.
+- **Find my N**: enter a minimum and maximum N (e.g. 50–1,000). The app
+  scans the range quickly (log-spaced, 200 replications, no bootstrap), then
+  runs the full tier only on a fine grid where power reaches your target —
+  large N ranges in minutes instead of hours. "Custom N grid" is still
+  available.
 - **Indirect-effect power** (a × b): Sobel test and percentile bootstrap,
   with minimum N and its own power curve. Choose "Target effect" in the app.
 - **Cross-validated against seminr** (`validation/cross_validate_seminr.R`):
