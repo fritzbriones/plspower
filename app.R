@@ -1,6 +1,6 @@
-# plspower - single-file deployable v0.7.0 (concatenated from modular project)
+# plspower - single-file deployable v0.7.1 (concatenated from modular project)
 # Author: Fritz Jeffry Briones - https://github.com/fritzbriones/plspower
-# Cite: Briones, F. J. (2026). plspower (Version 0.7.0) [Computer software].
+# Cite: Briones, F. J. (2026). plspower (Version 0.7.1) [Computer software].
 # Deploy: paste into shinyapps.io as app.R, or run with shiny::runApp()
 # Requires: shiny, bslib, ggplot2, future, promises, jsonlite
 
@@ -348,8 +348,12 @@ inverse_sqrt_n <- function(b_min, alpha = 0.05, target = 0.80) {
 FIXTURE <- list(
   a = 0.40, b = 0.30, c = 0.20, lambda = 0.80, n_ind = 3,
   seed = 2026, reps = 400, grid = c(100, 150, 200, 250, 300),
-  ref_power = c(0.432, 0.585, 0.690, 0.795, 0.902),
-  ref_min_n = 252, ref_f2 = 0.04087591240875911, ref_inv_sqrt = 197
+  # v0.7.1: reference power computed with seminr 2.6.0 on the same seed-2026
+  # datasets (estimates agree with this engine within 1e-7). The earlier
+  # reference (0.432, 0.585, 0.690, 0.795, 0.902; min N 252) came from a Python
+  # twin of the v0.4.1 engine, before the path-weighting fix.
+  ref_power = c(0.4875, 0.6275, 0.745, 0.7875, 0.8975),
+  ref_min_n = 254, ref_f2 = 0.04087591240875911, ref_inv_sqrt = 197
 )
 
 run_self_test <- function() {
@@ -428,7 +432,7 @@ library(jsonlite)
 
 if (!exists("%||%", baseenv())) `%||%` <- function(x, y) if (is.null(x)) y else x
 
-PLSPOWER_VERSION <- "0.7.0"
+PLSPOWER_VERSION <- "0.7.1"
 APP_VERSION <- paste("plspower", PLSPOWER_VERSION)
 AUTHOR <- "Fritz Jeffry Briones"
 REPO_URL <- "https://github.com/fritzbriones/plspower"
@@ -585,7 +589,8 @@ num <- function(x, d = 2) formatC(x, format = "f", digits = d)
 
 model_sentence <- function(mod) {
   B <- mod$B; idx <- which(mod$S, arr.ind = TRUE)
-  idx <- idx[order(idx[, 2], idx[, 1]), , drop = FALSE]
+  q <- nrow(B); last <- idx[, 1] == q & idx[, 2] == 1
+  idx <- idx[order(last, idx[, 1], idx[, 2]), , drop = FALSE]
   paths <- paste(sprintf("%s -> %s = %s", mod$names[idx[, 2]], mod$names[idx[, 1]],
                          num(B[idx])), collapse = ", ")
   kind <- if (mod$k == 1) "a simple mediation model (X -> M1 -> Y with a direct path X -> Y)"
@@ -681,6 +686,10 @@ ui <- bslib::page_fillable(
   title = "plspower - PLS-SEM power planner",
   theme = NULL,
   fillable_mobile = FALSE,
+  tags$style(HTML(paste(
+    ".MathJax_Display, mjx-container[display='true'] { overflow-x: auto; overflow-y: hidden; max-width: 100%; }",
+    "pre, .shiny-text-output { white-space: pre-wrap !important; word-break: break-word; }",
+    ".table-scroll { overflow-x: auto; max-width: 100%; }"))),
   app_header,
   bslib::layout_columns(
     col_widths = c(4, 8),
@@ -747,7 +756,7 @@ ui <- bslib::page_fillable(
         uiOutput("required_n_card"),
         plotOutput("power_curve"),
         card(card_header("Simulation diagnostics"),
-             card_body(tableOutput("diag_table"))),
+             card_body(tags$div(class = "table-scroll", tableOutput("diag_table")))),
         card(card_header("4. Methods text for your manuscript"),
              card_body(
                tags$p(class = "text-muted",
@@ -765,54 +774,54 @@ ui <- bslib::page_fillable(
           tags$p(class = "text-muted", "Formulas used by this app, in the order they are applied."),
           tags$h4("1. Model (data generation)"),
           tags$p("Structural model, all latent variables standardized (variance 1), in causal order X, M1..Mk, Y:"),
-          helpText("$$\\eta_j \\;=\\; \\sum_{i \\to j} \\beta_{ji}\\,\\eta_i \\;+\\; \\zeta_j, \\qquad
-                   \\operatorname{Var}(\\zeta_j) \\;=\\; 1 - \\boldsymbol\\beta_j^{\\top}\\,\\Sigma_{PP}\\,\\boldsymbol\\beta_j$$"),
+          helpText("$$\\eta_j = \\sum_{i \\to j} \\beta_{ji}\\,\\eta_i + \\zeta_j$$"),
+          helpText("$$\\operatorname{Var}(\\zeta_j) = 1 - \\boldsymbol\\beta_j^{\\top}\\,\\Sigma_{PP}\\,\\boldsymbol\\beta_j$$"),
           tags$p("Simple mediation: \\(M = aX + \\zeta_M\\), \\(Y = cX + bM + \\zeta_Y\\).
                   Parallel: \\(X \\to M_j\\) (\\(a_j\\)), \\(M_j \\to Y\\) (\\(b_j\\)).
                   Serial: \\(X \\to M_1\\) (\\(a\\)), \\(M_j \\to M_{j+1}\\) (\\(d_j\\)), \\(M_k \\to Y\\) (\\(b\\)).
                   A run is blocked if any \\(\\operatorname{Var}(\\zeta_j) < 0.01\\)."),
           tags$p("Reflective indicators (loadings \\(\\lambda_j\\), Gaussian errors):"),
-          helpText("$$x_{ij} \\;=\\; \\lambda_j\\,\\eta_j + \\sqrt{1-\\lambda_j^{2}}\\;\\varepsilon_{ij},
-                   \\qquad \\varepsilon_{ij} \\sim N(0,1)$$"),
+          helpText("$$x_{ij} = \\lambda_j\\,\\eta_j + \\sqrt{1-\\lambda_j^{2}}\\;\\varepsilon_{ij}$$"),
+          tags$p("with independent standard normal errors \\(\\varepsilon_{ij}\\)."),
           tags$h4("2. PLS-SEM estimation"),
           tags$p("Indicators are standardized. Composite scores from outer weights \\(\\mathbf w_j\\) (start: all 1):"),
-          helpText("$$\\hat\\eta_j = \\frac{X_j \\mathbf w_j}{\\operatorname{sd}(X_j \\mathbf w_j)}, \\qquad
-                   \\mathbf z_j = \\sum_i e_{ij}\\,\\hat\\eta_i, \\qquad
-                   \\mathbf w_j \\leftarrow \\operatorname{Cov}(X_j, \\mathbf z_j) \\;\\;(\\text{Mode A})$$"),
+          helpText("$$\\hat\\eta_j = \\frac{X_j \\mathbf w_j}{\\operatorname{sd}(X_j \\mathbf w_j)}$$"),
+          helpText("$$\\mathbf z_j = \\sum_i e_{ij}\\,\\hat\\eta_i$$"),
+          helpText("$$\\mathbf w_j \\leftarrow \\operatorname{Cov}(X_j, \\mathbf z_j)\\quad(\\text{Mode A})$$"),
           tags$p("Path weighting scheme: \\(e_{ij} = \\operatorname{cor}(\\hat\\eta_i, \\hat\\eta_j)\\) if \\(\\eta_i\\) is a
-                  successor of \\(\\eta_j\\)\\; \\(e_{ij}\\) = coefficient of \\(\\hat\\eta_i\\) in the regression of
+                  successor of \\(\\eta_j\\); \\(e_{ij}\\) = coefficient of \\(\\hat\\eta_i\\) in the regression of
                   \\(\\hat\\eta_j\\) on its predecessors. Repeat until the weights change by less than \\(10^{-7}\\)
                   (maximum 100 iterations)."),
           tags$p("Structural paths: OLS on the composite correlation matrix \\(R\\), with \\(P\\) the \\(p\\) predictors of \\(\\eta_j\\):"),
-          helpText("$$\\hat{\\boldsymbol\\beta}_j = R_{PP}^{-1}\\,\\mathbf r_{Pj}, \\qquad
-                   R^2_j = \\hat{\\boldsymbol\\beta}_j^{\\top}\\mathbf r_{Pj}, \\qquad
-                   \\widehat{\\operatorname{Var}}(\\hat{\\boldsymbol\\beta}_j) =
-                   \\frac{1-R^2_j}{n-1-p}\\,R_{PP}^{-1}$$"),
+          helpText("$$\\hat{\\boldsymbol\\beta}_j = R_{PP}^{-1}\\,\\mathbf r_{Pj}$$"),
+          helpText("$$R^2_j = \\hat{\\boldsymbol\\beta}_j^{\\top}\\mathbf r_{Pj}$$"),
+          helpText("$$\\widehat{\\operatorname{Var}}(\\hat{\\boldsymbol\\beta}_j) = \\frac{1-R^2_j}{n-1-p}\\,\\,R_{PP}^{-1}$$"),
           tags$h4("3. Significance tests in each simulated sample"),
           tags$p("Direct effect \\(c\\):"),
-          helpText("$$t = \\frac{\\hat c}{\\operatorname{SE}(\\hat c)}, \\qquad \\text{significant if } |t| > t_{1-\\alpha/2,\\;n-1-p}$$"),
+          helpText("$$t = \\frac{\\hat c}{\\operatorname{SE}(\\hat c)}$$"),
+          tags$p("Significant if \\(|t| > t_{1-\\alpha/2,\\,n-1-p}\\)."),
           tags$p("Indirect effect = sum over chains of products of paths (e.g. \\(ab\\), \\(a\\,d\\,b\\), \\(\\sum_j a_j b_j\\)).
                   Delta-method standard error, with \\(\\mathbf g\\) the gradient of the effect and \\(V\\) the path covariance
                   (equal to the Sobel test for a single \\(ab\\)):"),
-          helpText("$$\\operatorname{SE}(\\hat a\\hat b) = \\sqrt{\\hat b^{2}\\operatorname{SE}(\\hat a)^{2} + \\hat a^{2}\\operatorname{SE}(\\hat b)^{2}},
-                   \\qquad \\operatorname{SE} = \\sqrt{\\mathbf g^{\\top} V \\mathbf g}, \\qquad
-                   \\text{significant if } \\left|\\tfrac{\\text{effect}}{\\operatorname{SE}}\\right| > z_{1-\\alpha/2}$$"),
-          tags$p("Percentile bootstrap: refit the model on \\(B\\) resamples (rows drawn with replacement)\\;
+          helpText("$$\\operatorname{SE}(\\hat a\\hat b) = \\sqrt{\\hat b^{2}\\,\\operatorname{SE}(\\hat a)^{2} + \\hat a^{2}\\,\\operatorname{SE}(\\hat b)^{2}}$$"),
+          helpText("$$\\operatorname{SE} = \\sqrt{\\mathbf g^{\\top} V \\mathbf g}$$"),
+          tags$p("Significant if \\(|\\text{effect}/\\operatorname{SE}| > z_{1-\\alpha/2}\\)."),
+          tags$p("Percentile bootstrap: refit the model on \\(B\\) resamples (rows drawn with replacement);
                   significant if the interval \\([q_{\\alpha/2},\\, q_{1-\\alpha/2}]\\) of the \\(B\\) estimates excludes 0."),
           tags$h4("4. Power and minimum N"),
-          helpText("$$\\widehat{\\text{Power}}(N) = \\frac{1}{R}\\sum_{r=1}^{R} \\mathbb 1[\\text{significant in replication } r],
-                   \\qquad \\operatorname{SE}_{MC} = \\sqrt{\\frac{\\widehat{\\text{Power}}\\,(1-\\widehat{\\text{Power}})}{R}}$$"),
+          helpText("$$\\widehat{\\text{Power}}(N) = \\frac{1}{R}\\sum_{r=1}^{R} \\mathbb 1[\\text{sig}_r]$$"),
+          helpText("$$\\operatorname{SE}_{MC} = \\sqrt{\\widehat{\\text{Power}}\\,(1-\\widehat{\\text{Power}})/R}$$"),
           tags$p("Minimum N: first grid point \\(N_1\\) with power \\(\\ge\\) target \\(\\pi^*\\), interpolated on the logit scale
                   from the previous point \\(N_0\\) (powers clamped to [0.001, 0.999]):"),
           helpText("$$N^* = N_0 + \\frac{\\operatorname{logit}\\pi^* - \\operatorname{logit}\\pi_0}{\\operatorname{logit}\\pi_1 - \\operatorname{logit}\\pi_0}\\,(N_1 - N_0)$$"),
-          tags$p("Find my N: step 1 scans 8 log-spaced N from the minimum to the maximum (200 replications, no bootstrap)\\;
+          tags$p("Find my N: step 1 scans 8 log-spaced N from the minimum to the maximum (200 replications, no bootstrap);
                   step 2 runs the chosen tier on 5 N values between the last scan point below the target and 1.1 times
                   the first point above it."),
           tags$h4("5. Comparison methods (direct effect only)"),
           tags$p("G*Power-equivalent: exact noncentral F for the increase in \\(R^2\\) from X in the population regression of
                   Y on its \\(u\\) predictors:"),
-          helpText("$$f^2 = \\frac{R^2_{\\text{full}} - R^2_{\\text{without }X}}{1 - R^2_{\\text{full}}}, \\qquad
-                   F \\sim F(1,\\; N-u-1,\\; \\lambda = f^2 N)$$"),
+          helpText("$$f^2 = \\frac{R^2_{\\text{full}} - R^2_{\\text{without }X}}{1 - R^2_{\\text{full}}}$$"),
+          helpText("$$F \\sim F(1,\\; N-u-1,\\; \\lambda = f^2 N)$$"),
           tags$p("Inverse square-root rule (Kock & Hadaya, 2018), computed two-tailed:"),
           helpText("$$N_{\\min} = \\left\\lceil \\left(\\frac{z_{1-\\alpha/2} + z_{\\pi^*}}{|\\beta_{\\min}|}\\right)^{2} \\right\\rceil$$"),
           tags$p("Kock & Hadaya's published tables are one-tailed (e.g., 155 vs 197 at \\(\\beta = 0.20\\), \\(\\alpha = 0.05\\),
@@ -823,13 +832,13 @@ ui <- bslib::page_fillable(
                  so results are identical whether grid points run in sequence or in parallel. This server uses %d core(s).
                  The engine is cross-checked against seminr (validation/ on GitHub): every path agrees within 2e-7.", N_CORES)),
           tags$h4("Built-in smoke test"),
-          tags$p("Reproduces the seed-2026 reference fixture for simple mediation with
+          tags$p("Reproduces the seed-2026 reference fixture for simple mediation (reference computed with seminr) with
                  explicit tolerance rules (power: 2.5 combined Monte Carlo standard
                  errors; f2: 1e-10; inverse-sqrt: exact). SMOKE TEST: verifies
                  implementation agreement, not publication-grade precision."),
           actionButton("self_test", "Run engine smoke test"),
           uiOutput("self_status"),
-          tableOutput("self_test_table"),
+          tags$div(class = "table-scroll", tableOutput("self_test_table")),
           textOutput("self_test_verdict"),
           tags$h4("Known limitations"),
           tags$ul(
@@ -897,10 +906,12 @@ server <- function(input, output, session) {
     q <- nrow(m$S); P <- which(m$S[q, ])
     r2y <- drop(t(m$Sigma[P, q]) %*% solve(m$Sigma[P, P, drop = FALSE], m$Sigma[P, q]))
     eff <- m$true_effects[names(m$true_effects) != "direct"]
+    nice <- function(id) if (id == "indirect") (if (m$k == 1) "a x b" else "serial") else sub("via_", "via ", id)
+    names(eff) <- vapply(names(eff), nice, character(1))
     tags$p(class = "text-muted", style = "font-size:0.85em;",
            sprintf("Model OK. R-squared of Y = %.2f. True indirect effect%s: %s.", r2y,
                    if (length(eff) > 1) "s" else "",
-                   paste(sprintf("%s %.3f", sub("via_", "via ", names(eff)), eff), collapse = ", ")))
+                   paste(sprintf("%s = %.3f", names(eff), eff), collapse = ", ")))
   })
 
   output$effect_select <- renderUI({
@@ -1115,18 +1126,24 @@ Planning-method discrepancy (bootstrap vs G*Power): %s",
           geom_point(data = data.frame(N = r$coarse$N, p_nt = r$coarse[[col_nt(e)]]),
                      aes(N, p_nt), colour = "grey55", shape = 1, size = 2.5) } +
       scale_y_continuous(limits = c(0, 1)) +
+      { if (!is.null(r$coarse) && !identical(r$curve, r$coarse)) {
+          cn <- r$coarse$N; lo <- max(c(cn[cn < min(d$N)], min(d$N)))
+          hi <- min(c(cn[cn > max(d$N)], max(d$N)))
+          coord_cartesian(xlim = c(lo, hi)) } } +
       labs(y = "Power", x = "Sample size (N)",
-           title = paste("Monte Carlo power curve -", effect_labels(m)[[e]]),
-           subtitle = if (ind) "Blue: delta-method (Sobel) z test; orange dashed: percentile bootstrap"
-                      else "Blue: normal-theory t test; orange dashed: percentile bootstrap",
-           caption = paste0(if (!is.null(r$coarse)) "Grey circles: Find-my-N scan (200 replications, no bootstrap).  " else "",
+           title = paste(strwrap(paste("Power curve -", effect_labels(m)[[e]]), 42), collapse = "\n"),
+           subtitle = if (ind) "Blue: delta-method (Sobel) z test\nOrange dashed: percentile bootstrap"
+                      else "Blue: normal-theory t test\nOrange dashed: percentile bootstrap",
+           caption = paste0(if (!is.null(r$coarse)) "Grey circles: Find-my-N scan (200 reps, no bootstrap)\n" else "",
                             APP_VERSION, " - cite: Briones (2026)")) +
       theme_minimal()
   })
 
   output$diag_table <- renderTable({
     r <- res(); req(r); d <- r$curve
-    d[, c("N", grep("_(nt|boot|bias)$", names(d), value = TRUE), "nonconv", "reps")]
+    d <- d[, c("N", grep("_(nt|boot|bias)$", names(d), value = TRUE), "nonconv", "reps")]
+    for (k in c("N", "nonconv", "reps")) d[[k]] <- as.integer(round(d[[k]]))
+    d
   }, digits = 3)
 
   output$methods_text <- renderText({ r <- res(); req(r); methods_text(r) })
