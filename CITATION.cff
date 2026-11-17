@@ -6,7 +6,7 @@ authors:
   - family-names: Briones
     given-names: Fritz Jeffry
     orcid: "https://orcid.org/0009-0004-3213-7623"
-version: 0.8.0
+version: 0.8.1
 doi: 10.5281/zenodo.24291129
 date-released: 2026-11-17
 license: MIT
