@@ -2,7 +2,7 @@
 
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.24291129.svg)](https://doi.org/10.5281/zenodo.24291129)
 
-**Status: v0.8.0 — models with 1–3 mediators (parallel or serial) and
+**Status: v0.8.1 — models with 1–3 mediators (parallel or serial) and
 construct-specific measurement; engine cross-validated against `seminr` 2.6.0
 for six model types (all paths agree within 2e-7; power identical — see
 [Validation](#validation-protocol-read-before-reporting-anything)).
@@ -80,6 +80,16 @@ shiny::runApp("app.R")
 
 Or deploy `app.R` as a single-file Shiny app to shinyapps.io
 (`rsconnect::deployApp(appDir = ".", appFiles = "app.R")`).
+
+## What's new in v0.8.1 (export fix and validation wording)
+
+- **JSON export fix:** when Find my N does not reach the target power, only
+  the fast scan runs (200 replications, no bootstrap). The exported settings
+  now record those values, with the requested tier kept separately under
+  `requested`. Earlier versions recorded the tier's values instead.
+- Validation documentation now states exactly what the seminr check
+  establishes (see Validation below).
+- No change to the estimation engine or to any power result.
 
 ## What's new in v0.8.0 (exact values and c limit)
 
@@ -240,6 +250,12 @@ Publication tier on a computer.
    datasets: largest path difference 1.3e-7, largest power difference 0.000
    across 51 effect-by-condition cells. The v0.4.1 engine fails the simple
    check (difference 0.09). Results: `validation/results/`.
+   **What this establishes:** the PLS estimation (weights, scores and path
+   coefficients) matches seminr. The significance tests (t test, delta-method
+   z) are applied identically to both sets of estimates, so the matching
+   power confirms the estimates, not the tests themselves; percentile-bootstrap
+   power is not part of this comparison. Independent checks of the inference
+   (Type I error, coverage, bootstrap) are planned for v0.9.
 3. **Publication settings**: the Publication tier (5,000 MC replications ×
    2,000 bootstrap resamples); for a final reported N, repeat with at least
    3 seeds. Quick-tier results are never citable.
@@ -345,7 +361,7 @@ MIT License. See LICENSE.
 If you use plspower in a thesis, article or report, please cite:
 
 > Briones, F. J. (2026). *plspower: A Monte Carlo simulation planner for
-> PLS-SEM power analysis* (Version 0.8.0) [Computer software]. Zenodo.
+> PLS-SEM power analysis* (Version 0.8.1) [Computer software]. Zenodo.
 > https://doi.org/10.5281/zenodo.24291129
 
 In-text: (Briones, 2026). GitHub's **"Cite this repository"** button
@@ -356,7 +372,7 @@ In-text: (Briones, 2026). GitHub's **"Cite this repository"** button
   author  = {Briones, Fritz Jeffry},
   title   = {plspower: A Monte Carlo simulation planner for PLS-SEM power analysis},
   year    = {2026},
-  version = {0.8.0},
+  version = {0.8.1},
   publisher = {Zenodo},
   doi     = {10.5281/zenodo.24291129},
   url     = {https://doi.org/10.5281/zenodo.24291129}

@@ -1,6 +1,6 @@
-# plspower - single-file deployable v0.8.0 (concatenated from modular project)
+# plspower - single-file deployable v0.8.1 (concatenated from modular project)
 # Author: Fritz Jeffry Briones - https://github.com/fritzbriones/plspower
-# Cite: Briones, F. J. (2026). plspower (Version 0.8.0) [Computer software]. Zenodo. https://doi.org/10.5281/zenodo.24291129
+# Cite: Briones, F. J. (2026). plspower (Version 0.8.1) [Computer software]. Zenodo. https://doi.org/10.5281/zenodo.24291129
 # Deploy: paste into shinyapps.io as app.R, or run with shiny::runApp()
 # Requires: shiny, bslib, ggplot2, future, promises, jsonlite
 
@@ -431,7 +431,7 @@ library(jsonlite)
 
 if (!exists("%||%", baseenv())) `%||%` <- function(x, y) if (is.null(x)) y else x
 
-PLSPOWER_VERSION <- "0.8.0"
+PLSPOWER_VERSION <- "0.8.1"
 APP_VERSION <- paste("plspower", PLSPOWER_VERSION)
 AUTHOR <- "Fritz Jeffry Briones"
 REPO_URL <- "https://github.com/fritzbriones/plspower"
@@ -562,6 +562,10 @@ run_power_simulation <- function(settings) {
     i <- which(pw >= settings$target)[1]
     if (is.na(i)) {
       settings$n_grid <- cg
+      # Only the fast scan ran: record the settings actually used, keep the
+      # requested tier separately so exports (JSON, methods) are accurate.
+      settings$requested <- list(mc_reps = settings$mc_reps, boot_reps = settings$boot_reps)
+      settings$mc_reps <- COARSE_MC; settings$boot_reps <- 0L
       search_note <- sprintf(paste0("Target power was not reached anywhere up to N = %d ",
         "(highest stage-1 power %.2f). Increase the maximum N or check the effect sizes."),
         settings$n_max, max(pw, na.rm = TRUE))
