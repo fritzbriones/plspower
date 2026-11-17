@@ -276,6 +276,9 @@ so every run is reproducible.
 
 ## Roadmap
 
+The approved v0.9.0 plan (tests, independent validation, then features) is in
+[ROADMAP.md](ROADMAP.md).
+
 - [x] First hosted run + smoke test PASS (Posit Cloud, Nov 15, 2026)
 - [x] `seminr` cross-validation via separate validation script
       (±0.03 agreement rule) — PASSED, v0.5.0
