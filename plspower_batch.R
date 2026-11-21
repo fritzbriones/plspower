@@ -161,8 +161,9 @@ if (boot_reps > 0) cat(", ", fmt_n(r$min_n_boot), " (bootstrap)", sep = "")
 cat("\n")
 if (identical(e, "direct")) {
   cat("  Planning comparison (direct effect only):\n")
-  cat("    G*Power-equivalent N: ", num(r$gpower, 0),
-      " | inverse square-root rule N: ", num(r$inverse_sqrt, 0), "\n\n", sep = "")
+  cat("    G*Power-equivalent N: ", fmt_n(r$gpower$N),
+      " | inverse square-root rule N: ", fmt_n(r$inverse_sqrt), "\n\n", sep = "")
+  
 } else cat("\n")
 
 cat("---- Methods text (same paragraph the app exports) ----\n")
