@@ -715,6 +715,10 @@ ui <- bslib::page_fillable(
       card_header("1. Specify the model"),
       card_body(
         selectInput("k", "Number of mediators", c("1" = 1, "2" = 2, "3" = 3)),
+        tags$div(style = "display:flex;gap:8px;align-items:center;margin-bottom:6px;",
+          actionButton("example", "Load example model"),
+          tags$p(class = "text-muted", style = "font-size:0.85em;margin:0;",
+                 "Classic demo: a = .40, b = .30, c = .20, 3 indicators, loading .80.")),
         conditionalPanel("input.k != '1'",
           radioButtons("structure", "Mediator structure",
                        c("Parallel (X -> each M -> Y)" = "parallel",
@@ -738,6 +742,8 @@ ui <- bslib::page_fillable(
         selectInput("tier", "Compute tier", choices = names(TIERS), selected = "quick"),
         textOutput("tier_note"),
         uiOutput("tier_banner"),
+        tags$p(class = "text-muted", style = "font-size:0.85em;",
+               "Tip: use Quick to explore, then re-run Standard or Publication before citing numbers in a manuscript."),
         numericInput("seed", "Random seed", 2026),
         radioButtons("mode", "Sample sizes",
                      choices = c("Find my N (automatic search)" = "find",
@@ -891,6 +897,28 @@ server <- function(input, output, session) {
       numericInput(id, sprintf("%s [%s to %s]", label, lo, hi), v, min = lo, max = hi, step = 0.01)
     else sliderInput(id, label, lo, hi, v, step)
   }
+
+  # ---- Load example model button -------------------------------------------
+  observeEvent(input$example, {
+    updateSelectInput(session, "k", selected = "1")
+    updateRadioButtons(session, "structure", selected = "parallel")
+    updateCheckboxInput(session, "exact", value = FALSE)
+    updateCheckboxInput(session, "same_meas", value = TRUE)
+    ex <- list(a1 = 0.40, b1 = 0.30, c = 0.20, lambda = 0.80)
+    for (id in names(ex)) {
+      updateSliderInput(session, id, value = ex[[id]])
+      updateNumericInput(session, id, value = ex[[id]])
+    }
+    updateSliderInput(session, "n_ind", value = 3)
+    updateSelectInput(session, "alpha", selected = "0.05")
+    updateSelectInput(session, "target", selected = "0.80")
+    updateSelectInput(session, "tier", selected = "quick")
+    updateNumericInput(session, "seed", value = 2026)
+    updateRadioButtons(session, "mode", selected = "find")
+    updateNumericInput(session, "n_min", value = 50)
+    updateNumericInput(session, "n_max", value = 1000)
+    updateTextInput(session, "n_grid_text", value = "100,300,50")
+  })
 
   # Path inputs for the chosen model, then the direct effect c.
   output$path_inputs <- renderUI({
@@ -1186,27 +1214,3 @@ Planning-method discrepancy (bootstrap vs G*Power): %s",
   }, digits = 3)
 
   output$methods_text <- renderText({ r <- res(); req(r); methods_text(r) })
-  output$dl_methods <- downloadHandler(
-    filename = "plspower_methods_text.txt",
-    content = function(file) writeLines(methods_text(res()), file, useBytes = TRUE))
-  output$dl_csv <- downloadHandler(
-    filename = "plspower_curve.csv",
-    content = function(file) write.csv(res()$curve, file, row.names = FALSE))
-  output$dl_json <- downloadHandler(
-    filename = "plspower_run.json",
-    content = function(file) jsonlite::write_json(res(), file,
-                                                  auto_unbox = TRUE, force = TRUE))
-
-  st <- reactive(self_task$result())
-  output$self_test_table <- renderTable({
-    s <- st(); req(s); s$table
-  }, digits = 4)
-  output$self_test_verdict <- renderText({
-    s <- st(); req(s)
-    sprintf("%s | min N (informational): this engine %s, reference %d | %s",
-            if (s$pass) "SMOKE TEST PASSED" else "SMOKE TEST FAILED",
-            format(s$min_n), s$min_n_ref, s$label)
-  })
-}
-
-shinyApp(ui, server)
