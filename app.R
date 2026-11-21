@@ -1214,3 +1214,27 @@ Planning-method discrepancy (bootstrap vs G*Power): %s",
   }, digits = 3)
 
   output$methods_text <- renderText({ r <- res(); req(r); methods_text(r) })
+  output$dl_methods <- downloadHandler(
+    filename = "plspower_methods_text.txt",
+    content = function(file) writeLines(methods_text(res()), file, useBytes = TRUE))
+  output$dl_csv <- downloadHandler(
+    filename = "plspower_curve.csv",
+    content = function(file) write.csv(res()$curve, file, row.names = FALSE))
+  output$dl_json <- downloadHandler(
+    filename = "plspower_run.json",
+    content = function(file) jsonlite::write_json(res(), file,
+                                                  auto_unbox = TRUE, force = TRUE))
+
+  st <- reactive(self_task$result())
+  output$self_test_table <- renderTable({
+    s <- st(); req(s); s$table
+  }, digits = 4)
+  output$self_test_verdict <- renderText({
+    s <- st(); req(s)
+    sprintf("%s | min N (informational): this engine %s, reference %d | %s",
+            if (s$pass) "SMOKE TEST PASSED" else "SMOKE TEST FAILED",
+            format(s$min_n), s$min_n_ref, s$label)
+  })
+}
+
+shinyApp(ui, server)
