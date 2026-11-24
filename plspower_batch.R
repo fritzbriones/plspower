@@ -1,5 +1,5 @@
 #!/usr/bin/env Rscript
-# plspower_batch.R - headless plspower runner (v0.8.1 engine).
+# plspower_batch.R - headless plspower runner (v0.8.2; engine unchanged since v0.8.0).
 #
 # Runs the same Monte Carlo power engine as the Shiny app, without any
 # hosting limits: use it for Standard or Publication tier runs on your

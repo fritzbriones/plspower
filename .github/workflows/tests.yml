@@ -26,5 +26,8 @@ jobs:
       - name: Run tests
         run: Rscript -e 'source("app.R"); st <- run_self_test(); cat(if (st$pass) "SELF-TEST PASSED" else "SELF-TEST FAILED", "\n"); if (!isTRUE(st$pass)) quit(status = 1)'
 
+      - name: Hosted-server limits (v0.8.2)
+        run: Rscript tests/hosted_limits.R
+
       - name: Batch runner smoke test (quick tier, small grid)
         run: Rscript plspower_batch.R --tier quick --mode grid --grid 100,150,50 --out plspower_batch_smoke

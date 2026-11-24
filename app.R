@@ -1,6 +1,6 @@
-# plspower - single-file deployable v0.8.1 (concatenated from modular project)
+# plspower - single-file deployable v0.8.2 (concatenated from modular project)
 # Author: Fritz Jeffry Briones - https://github.com/fritzbriones/plspower
-# Cite: Briones, F. J. (2026). plspower (Version 0.8.1) [Computer software]. Zenodo. https://doi.org/10.5281/zenodo.24291129
+# Cite: Briones, F. J. (2026). plspower (Version 0.8.2) [Computer software]. Zenodo. https://doi.org/10.5281/zenodo.24291129
 # Deploy: paste into shinyapps.io as app.R, or run with shiny::runApp()
 # Requires: shiny, bslib, ggplot2, future, promises, jsonlite
 
@@ -431,7 +431,7 @@ library(jsonlite)
 
 if (!exists("%||%", baseenv())) `%||%` <- function(x, y) if (is.null(x)) y else x
 
-PLSPOWER_VERSION <- "0.8.1"
+PLSPOWER_VERSION <- "0.8.2"
 APP_VERSION <- paste("plspower", PLSPOWER_VERSION)
 AUTHOR <- "Fritz Jeffry Briones"
 REPO_URL <- "https://github.com/fritzbriones/plspower"
@@ -489,6 +489,26 @@ TIERS <- list(
   standard     = list(mc = 1000, boot = 2000,  label = "Standard (1,000 MC x 2,000 boot)"),
   publication  = list(mc = 5000, boot = 2000,  label = "Publication (5,000 MC x 2,000 boot)")
 )
+
+# ---- Hosted-server limits ----------------------------------------------------
+# On a public server, long runs use the app owner's compute credits and are lost
+# if the visitor's browser disconnects. In hosted mode the Publication tier is
+# not offered and Standard runs are allowed only up to HOSTED_MAX_HOURS of
+# estimated runtime; larger runs belong in plspower_batch.R on your own computer.
+# The engine and TIERS are unchanged, so results are identical in every mode.
+# Hosted mode is on when the app runs non-interactively (as on Posit Connect
+# Cloud or shinyapps.io) and off in an interactive R session. Override with the
+# environment variable PLSPOWER_HOSTED=true or PLSPOWER_HOSTED=false.
+plspower_hosted <- function() {
+  v <- tolower(Sys.getenv("PLSPOWER_HOSTED", ""))
+  if (v %in% c("true", "1", "yes")) return(TRUE)
+  if (v %in% c("false", "0", "no")) return(FALSE)
+  !interactive()
+}
+HOSTED <- plspower_hosted()
+HOSTED_TIERS <- c("quick", "standard")
+HOSTED_MAX_HOURS <- 3
+BATCH_COMMAND <- "Rscript plspower_batch.R --tier publication --mode find --n-min 50 --n-max 1000"
 
 # ---- Effects and labels -----------------------------------------------------
 chain_text <- function(mod, ch) paste(mod$names[ch], collapse = " -> ")
@@ -739,9 +759,15 @@ ui <- bslib::page_fillable(
       card_body(
         selectInput("alpha", "Significance level", c(0.05, 0.01, 0.10)),
         selectInput("target", "Target power", c(0.80, 0.90)),
-        selectInput("tier", "Compute tier", choices = names(TIERS), selected = "quick"),
+        selectInput("tier", "Compute tier",
+                    choices = if (HOSTED) HOSTED_TIERS else names(TIERS), selected = "quick"),
         textOutput("tier_note"),
         uiOutput("tier_banner"),
+        if (HOSTED) tags$div(class = "alert alert-info", style = "font-size:0.85em;padding:8px;",
+          tags$strong("Publication tier: run it on your own computer. "),
+          sprintf("To keep this free server available to everyone, the online app offers Quick and Standard tiers, with Standard runs up to about %d hours. ", HOSTED_MAX_HOURS),
+          "Tip: run Quick on a wide N range first, then Standard on a narrow range around the result. For Publication, download app.R and plspower_batch.R from GitHub (same engine, same results) and run:",
+          tags$pre(style = "white-space:pre-wrap;font-size:0.9em;margin:6px 0 0 0;", BATCH_COMMAND)),
         tags$p(class = "text-muted", style = "font-size:0.85em;",
                "Tip: use Quick to explore, then re-run Standard or Publication before citing numbers in a manuscript."),
         numericInput("seed", "Random seed", 2026),
@@ -997,6 +1023,22 @@ server <- function(input, output, session) {
       else parse_grid(input$n_grid_text),
       error = function(e) { showNotification(conditionMessage(e), type = "error"); NULL })
     req(grid)
+    if (HOSTED && !input$tier %in% HOSTED_TIERS) {
+      showNotification("The Publication tier runs only on your own computer (see plspower_batch.R).",
+                       type = "error", duration = 10); req(FALSE)
+    }
+    if (HOSTED && identical(input$tier, "standard")) {
+      up <- runtime_upper()
+      if (is.finite(up) && up > HOSTED_MAX_HOURS * 3600) {
+        showNotification(sprintf(paste(
+          "This Standard run could take up to %s, over the %d-hour limit for the online app.",
+          "Tip: run Quick first to see roughly where the needed N is, then run Standard on a",
+          "narrow range around it (e.g. 200-300). Or run it on your own computer with",
+          "plspower_batch.R (no limit)."),
+          fmt_duration(up), HOSTED_MAX_HOURS), type = "error", duration = 15)
+        req(FALSE)
+      }
+    }
     eff <- input$effect; if (is.null(eff) || !eff %in% names(m$effects)) eff <- "direct"
     tier <- TIERS[[input$tier]]
     list(model = m, model_inputs = model_inputs(), effect = eff,
@@ -1100,6 +1142,25 @@ server <- function(input, output, session) {
 
   # Runtime estimate shown BEFORE the run: N grid x MC reps x (1 + bootstrap)
   # PLS fits, fit time measured on this server and scaled by model size.
+  # Worst-case estimated runtime in seconds for the current settings (NA if
+  # the inputs are incomplete); used for the hosted-server limit.
+  runtime_upper <- reactive({
+    m <- model(); if (inherits(m, "error")) return(NA_real_)
+    tier <- TIERS[[input$tier]]
+    size <- sum(m$n_ind) / 9 * (nrow(m$S) / 3)
+    cost <- function(grid, mc, boot) sum(grid / 200) * mc * (1 + boot) *
+      FIT_MS_N200 / 1000 * size / min(N_CORES, length(grid))
+    if (identical(input$mode, "find")) {
+      ok <- tryCatch({ check_range(input$n_min, input$n_max); TRUE }, error = function(e) FALSE)
+      if (!ok) return(NA_real_)
+      cg <- coarse_grid(input$n_min, input$n_max)
+      return(cost(cg, COARSE_MC, 0) +
+             cost(fine_grid(cg[length(cg) - 1], cg[length(cg)]), tier$mc, tier$boot))
+    }
+    grid <- tryCatch(parse_grid(input$n_grid_text), error = function(e) NULL)
+    if (is.null(grid)) NA_real_ else cost(grid, tier$mc, tier$boot)
+  })
+
   output_runtime_text <- reactive({
     m <- model(); if (inherits(m, "error")) return("")
     tier <- TIERS[[input$tier]]
