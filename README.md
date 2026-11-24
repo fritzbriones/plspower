@@ -2,11 +2,11 @@
 
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.24291129.svg)](https://doi.org/10.5281/zenodo.24291129)
 
-**Status: v0.8.1 — models with 1–3 mediators (parallel or serial) and
+**Status: v0.8.2 — models with 1–3 mediators (parallel or serial) and
 construct-specific measurement; engine cross-validated against `seminr` 2.6.0
 for six model types (all paths agree within 2e-7; power identical — see
 [Validation](#validation-protocol-read-before-reporting-anything)).
-Built-in smoke test and seminr cross-validation PASSED on v0.8.0 (Nov 17, 2026).** Quick-preview results are never
+Built-in smoke test PASSED on v0.8.2 (Nov 24, 2026); seminr cross-validation PASSED on the same engine (v0.8.0, Nov 17, 2026).** Quick-preview results are never
 publication-grade by design.
 
 **Created by Fritz Jeffry Briones.** If you use plspower, please
@@ -81,57 +81,22 @@ shiny::runApp("app.R")
 Or deploy `app.R` as a single-file Shiny app to shinyapps.io
 (`rsconnect::deployApp(appDir = ".", appFiles = "app.R")`).
 
-## What's new in v0.8.1 (export fix and validation wording)
+## Online app limits (to protect the free server)
 
-- **JSON export fix:** when Find my N does not reach the target power, only
-  the fast scan runs (200 replications, no bootstrap). The exported settings
-  now record those values, with the requested tier kept separately under
-  `requested`. Earlier versions recorded the tier's values instead.
-- Validation documentation now states exactly what the seminr check
-  establishes (see Validation below).
-- No change to the estimation engine or to any power result.
+The public app runs on a free Posit Connect Cloud plan, where every running hour counts against the
+owner's monthly compute credits, and a long run is lost if the browser tab closes. So the online app:
 
-## What's new in v0.8.0 (exact values and c limit)
+- offers the **Quick** and **Standard** tiers;
+- allows Standard runs of up to about **3 hours** of estimated runtime;
+- runs the **Publication** tier only on your own computer, with the same engine and identical results:
 
-- **Type exact values:** a new tick box under "Standardized paths" swaps the
-  sliders for number boxes with 0.01 steps (for example a = 0.13, c = 0.12),
-  with the same ranges: paths 0 to 0.70, c 0 to 0.50, loading 0.50 to 0.95.
-  Typed values outside the range are rejected with a message.
-- **Limit for c shown live:** when the paths into Y are large, the model note
-  says how high the direct effect c can go (for example "With these paths,
-  c can be at most 0.37"), including when a setting is blocked.
-- Per-construct loadings now take 0.01 steps.
-- The engine is unchanged, so earlier results and the smoke test still apply.
+```bash
+# download app.R and plspower_batch.R into one folder, then:
+Rscript plspower_batch.R --tier publication --mode find --n-min 50 --n-max 1000
+```
 
-## What's new in v0.7.1 (phone display fixes)
-
-- Formulas split into shorter lines and scrollable, so nothing is cut off
-  on a phone; three stray "\;" symbols removed from the text.
-- Result box, methods text and tables wrap or scroll on small screens.
-- Power curve zooms to the sample sizes that were analysed, with a title
-  and legend that fit a phone screen.
-- Diagnostics show whole numbers for N; the model note reads
-  "True indirect effect: a x b = 0.165".
-- **Smoke-test reference updated:** now computed with seminr 2.6.0 on the
-  same seed-2026 datasets, so the test checks the current engine (the app
-  matches it exactly). The old reference came from the v0.4.1 engine,
-  before the path-weighting fix.
-
-## What's new in v0.7.0
-
-- **Title bar** at the top of the app: *plspower — Sample-size and power
-  planner for PLS-SEM*, version and author.
-- **Progress bar** during a run: replications done, percent and time left
-  (Find my N shows step 1 "scanning" and step 2 with the bar).
-- **"How long will it take?"** guide in the app: Quick / Standard /
-  Publication times for *your* model on *this* server, for a needed N of
-  about 150, 300 and 600.
-- **Publication tier 5× faster**: 5,000 Monte Carlo replications × 2,000
-  bootstrap resamples (was 10,000; 2,000 resamples is ample for a
-  significance decision at α = .05 or .01).
-- **All formulas shown as rendered math** in the Methods & Validation tab
-  (data generation, PLS-SEM estimation, tests, power, minimum N, G*Power
-  and inverse square-root comparisons).
+Running the app locally (`shiny::runApp("app.R")` in RStudio) has no limits. To force a mode, set the
+environment variable `PLSPOWER_HOSTED=true` or `false`.
 
 ### How long will it take?
 
@@ -149,71 +114,7 @@ you run.
 Explore with Quick on any device; run Standard or Publication on a computer
 and keep the page open until it finishes.
 
-## What's new in v0.6.1 (mobile and usability fixes)
-
-- **Live status while a run is going**: elapsed time, the estimate, and a
-  reminder to keep the page open. Errors are now shown instead of failing
-  silently. The smoke test shows a "running" message too.
-- **Download buttons appear only after a run** (tapping them before gave an
-  error), with a short explanation of the CSV and the JSON run record.
-- **Correct CPU count on cloud hosting**: uses `parallelly::availableCores()`,
-  which respects container limits. `detectCores()` could report the host's
-  cores, so runs took much longer than the estimate.
-- **Quick tier is 5× faster**: 200 MC × 100 bootstrap resamples (was 500);
-  still a preview — use Standard or Publication for reporting.
-- **Phones can reconnect** to the same session after a short interruption
-  (switching apps, screen lock).
-
-**Using plspower on a phone:** keep the page open and the screen on until
-the results appear; use Quick tier to explore and run Standard or
-Publication tier on a computer.
-
-## What's new in v0.6.0
-
-- **1–3 mediators**, **parallel** (X → each M → Y) or **serial**
-  (X → M1 → M2 → M3 → Y), always with the direct path X → Y.
-- **Different loading and number of indicators per construct** (or one
-  setting for all).
-- **Effects**: direct, total indirect, specific indirect via each mediator,
-  and serial indirect; tested with the delta-method z test (= Sobel for a
-  single a × b; verified against the empirical SD) and the percentile bootstrap.
-- Model check in the app: impossible path combinations (explained variance
-  ≥ 100%) are blocked with a clear message; R² of Y and the true indirect
-  effects are shown.
-- G*Power-equivalent comparison generalised to any of these models.
-- **Fix:** minimum-N interpolation returned the lower grid point when power
-  reached exactly 100% at the next point (present since v0.4.1).
-- Cross-check against seminr extended to six model types (simple, parallel
-  with 2–3 mediators, serial with 2–3 mediators; equal and unequal measurement).
-- Simple mediation gives bit-for-bit the same results as v0.5.0.
-
-## What's new in v0.5.0
-
-- **About 10× faster engine**, numerically identical to v0.4.2 (max
-  difference ~1e-15). Grid points run in parallel; the default Quick tier
-  now takes minutes instead of hours.
-- **Find my N**: enter a minimum and maximum N (e.g. 50–1,000). The app
-  scans the range quickly (log-spaced, 200 replications, no bootstrap), then
-  runs the full tier only on a fine grid where power reaches your target —
-  large N ranges in minutes instead of hours. "Custom N grid" is still
-  available.
-- **Indirect-effect power** (a × b): Sobel test and percentile bootstrap,
-  with minimum N and its own power curve. Choose "Target effect" in the app.
-- **Cross-validated against seminr** (`validation/cross_validate_seminr.R`):
-  identical estimates on the same data and identical power curves.
-- **Methods text export**: a ready-to-paste sample-size justification
-  paragraph with references (download as TXT).
-- **How to cite** card, citation in the footer, plot caption, JSON export
-  and methods text; `CITATION.cff` so GitHub shows "Cite this repository".
-- Reproducible parallel runs: each N uses its own L'Ecuyer-CMRG stream
-  derived from the seed, so results are identical with 1 or many cores.
-
-### v0.4.2
-
-- Path weighting now includes the X → Y link (v0.4.1 ignored it; its
-  direct-effect estimates differed from seminr by up to 0.09).
-- Honest runtime estimate shown before running; validated N-grid input;
-  background runs; package versions in the JSON export.
+Version history: see [NEWS.md](NEWS.md).
 
 ## Model scope (v1, deliberately narrow)
 
@@ -235,8 +136,8 @@ Publication tier on a computer.
    f²: 1e-10 against a full-precision reference; inverse-sqrt: exact
    integer). At 400 Monte Carlo replications this verifies
    *implementation agreement*, not publication-grade precision.
-   **Status: PASSED, v0.8.0, Nov 17, 2026** (local R run: minimum N 254
-   vs reference 254, all checks pass). Last confirmed on Posit Connect
+   **Status: PASSED, v0.8.2, Nov 24, 2026** (local R run: all 7 checks pass;
+   v0.8.0 also passed on Nov 17, 2026, minimum N 254 vs reference 254). Last confirmed on Posit Connect
    Cloud with v0.7.1 (Nov 17, 2026); the estimation engine is unchanged
    in v0.8.0.
 2. **Independent cross-validation against seminr**
@@ -364,7 +265,7 @@ MIT License. See LICENSE.
 If you use plspower in a thesis, article or report, please cite:
 
 > Briones, F. J. (2026). *plspower: A Monte Carlo simulation planner for
-> PLS-SEM power analysis* (Version 0.8.1) [Computer software]. Zenodo.
+> PLS-SEM power analysis* (Version 0.8.2) [Computer software]. Zenodo.
 > https://doi.org/10.5281/zenodo.24291129
 
 In-text: (Briones, 2026). GitHub's **"Cite this repository"** button
@@ -375,7 +276,7 @@ In-text: (Briones, 2026). GitHub's **"Cite this repository"** button
   author  = {Briones, Fritz Jeffry},
   title   = {plspower: A Monte Carlo simulation planner for PLS-SEM power analysis},
   year    = {2026},
-  version = {0.8.1},
+  version = {0.8.2},
   publisher = {Zenodo},
   doi     = {10.5281/zenodo.24291129},
   url     = {https://doi.org/10.5281/zenodo.24291129}
