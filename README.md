@@ -88,6 +88,8 @@ owner's monthly compute credits, and a long run is lost if the browser tab close
 
 - offers the **Quick** and **Standard** tiers;
 - allows Standard runs of up to about **3 hours** of estimated runtime;
+- suggests a two-step workflow: run **Quick** on a wide N range (minutes) to see roughly where the needed N
+  is, then **Standard** on a narrow range around it (for example 200–300);
 - runs the **Publication** tier only on your own computer, with the same engine and identical results:
 
 ```bash

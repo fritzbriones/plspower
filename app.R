@@ -766,7 +766,7 @@ ui <- bslib::page_fillable(
         if (HOSTED) tags$div(class = "alert alert-info", style = "font-size:0.85em;padding:8px;",
           tags$strong("Publication tier: run it on your own computer. "),
           sprintf("To keep this free server available to everyone, the online app offers Quick and Standard tiers, with Standard runs up to about %d hours. ", HOSTED_MAX_HOURS),
-          "Download app.R and plspower_batch.R from GitHub (same engine, same results) and run:",
+          "Tip: run Quick on a wide N range first, then Standard on a narrow range around the result. For Publication, download app.R and plspower_batch.R from GitHub (same engine, same results) and run:",
           tags$pre(style = "white-space:pre-wrap;font-size:0.9em;margin:6px 0 0 0;", BATCH_COMMAND)),
         tags$p(class = "text-muted", style = "font-size:0.85em;",
                "Tip: use Quick to explore, then re-run Standard or Publication before citing numbers in a manuscript."),
@@ -1032,7 +1032,9 @@ server <- function(input, output, session) {
       if (is.finite(up) && up > HOSTED_MAX_HOURS * 3600) {
         showNotification(sprintf(paste(
           "This Standard run could take up to %s, over the %d-hour limit for the online app.",
-          "Narrow the N range, or run it on your own computer with plspower_batch.R (no limit)."),
+          "Tip: run Quick first to see roughly where the needed N is, then run Standard on a",
+          "narrow range around it (e.g. 200-300). Or run it on your own computer with",
+          "plspower_batch.R (no limit)."),
           fmt_duration(up), HOSTED_MAX_HOURS), type = "error", duration = 15)
         req(FALSE)
       }

@@ -8,7 +8,7 @@ Version history. The current version and its validation status are in the [READM
   shinyapps.io) the tier menu offers Quick and Standard; a note explains how to run the
   Publication tier with `plspower_batch.R` on your own computer, with the exact command.
 - **Standard runs on the hosted app are limited to about 3 hours** of estimated runtime. Longer runs
-  show a message suggesting a narrower N range or the batch runner.
+  show a message with the two-step tip (Quick on a wide range, then Standard on a narrow range) or the batch runner.
 - Hosted mode is detected automatically (non-interactive R) and can be set with the environment
   variable `PLSPOWER_HOSTED=true/false`. Run locally in RStudio, every tier is available as before.
 - **No change to the estimation engine, the tiers or any power result;** the smoke test and the
